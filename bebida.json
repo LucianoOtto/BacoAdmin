@@ -1,0 +1,20 @@
+[
+  {
+    "id": "fb931b12",
+    "producto": "Fernet",
+    "cantidad": 1,
+    "precioUnitario": 3500,
+    "precioTotal": 3500,
+    "encargadoId": "d2ad5df7",
+    "fechaVenta": "2026-07-02T15:07:04.540Z"
+  },
+  {
+    "id": "07dcd6ce",
+    "producto": "Fernet",
+    "cantidad": 1,
+    "precioUnitario": 3500,
+    "precioTotal": 3500,
+    "encargadoId": "839f5e96",
+    "fechaVenta": "2026-07-04T15:23:38.048Z"
+  }
+]

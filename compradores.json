@@ -1,0 +1,58 @@
+[
+  {
+    "id": "38788a5f",
+    "nombre": "Otto Luciano",
+    "email": "lucianootto11@gmail.com",
+    "asistio": false,
+    "vendedorId": "f87cf0de",
+    "fechaRegistro": "2026-06-08T20:23:59.793Z"
+  },
+  {
+    "id": "7ea61e35",
+    "nombre": "Luciano Otto",
+    "email": "lucianootto11@gmail.com",
+    "asistio": false,
+    "vendedorId": "af372e3c",
+    "fechaRegistro": "2026-06-08T20:53:11.682Z"
+  },
+  {
+    "id": "7d598e61",
+    "nombre": "Tobias Salinas",
+    "email": "barber.loop24@gmail.com",
+    "asistio": false,
+    "vendedorId": "af372e3c",
+    "fechaRegistro": "2026-07-02T14:28:23.838Z"
+  },
+  {
+    "id": "7cef6e27",
+    "nombre": "luciano otto",
+    "email": "lucianootto11@gmail.com",
+    "asistio": false,
+    "vendedorId": "af372e3c",
+    "fechaRegistro": "2026-07-02T14:29:37.039Z"
+  },
+  {
+    "id": "93cc77ed",
+    "nombre": "Luciano Otto (Premio Staff)",
+    "email": "Luciano@gmail.com",
+    "asistio": false,
+    "vendedorId": "ADMIN-PREMIO",
+    "fechaRegistro": "2026-07-02T16:02:34.997Z"
+  },
+  {
+    "id": "4fc8c75d",
+    "nombre": "totop (Premio Staff)",
+    "email": "lucianootto11@gmail.com",
+    "asistio": false,
+    "vendedorId": "ADMIN-PREMIO",
+    "fechaRegistro": "2026-07-02T16:12:47.866Z"
+  },
+  {
+    "id": "df05f516",
+    "nombre": "Tobyiyi (Premio Staff)",
+    "email": "Barber.loop24@gmail.com",
+    "asistio": false,
+    "vendedorId": "ADMIN-PREMIO",
+    "fechaRegistro": "2026-07-02T16:22:26.462Z"
+  }
+]
