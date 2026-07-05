@@ -30,7 +30,6 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
-app.options(cors(corsOptions));
 
 const compradoresPath = path.join(__dirname, 'compradores.json');
 const rrppPath = path.join(__dirname, 'rrpp.json'); 
