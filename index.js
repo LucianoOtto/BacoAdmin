@@ -9,8 +9,24 @@ const nodemailer = require('nodemailer');
 const app = express();
 require('dotenv').config();
 app.use(express.json());
-app.use(cors()); 
+app.use(cors({
+  origin: function (origin, callback) {
+    // Permitir peticiones sin origen (como Postman o el propio servidor) o las que estén en la lista
+    if (!origin || origenesPermitidos.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error('Bloqueado por políticas de CORS de BacoTickets'));
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+})); 
 
+const origenesPermitidos = [
+  'http://localhost:5173',                         
+  'https://animated-platypus-df4a3d.netlify.app' 
+];
 const compradoresPath = path.join(__dirname, 'compradores.json');
 const rrppPath = path.join(__dirname, 'rrpp.json'); 
 const bebidaPath = path.join(__dirname, 'bebida.json');
