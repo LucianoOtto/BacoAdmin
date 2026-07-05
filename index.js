@@ -1,37 +1,35 @@
 const express = require('express');
-const fs = require('fs/promises');
-const path = require('path');
 const cors = require('cors');
-const { v4: uuidv4 } = require('uuid'); 
-const bcrypt = require('bcrypt'); 
+const path = require('path');
+const fs = require('fs').promises;
+const bcrypt = require('bcrypt');
+const { v4: uuidv4 } = require('uuid');
 const nodemailer = require('nodemailer');
 
 const app = express();
+require('dotenv').config();
 app.use(express.json());
 app.use(cors()); 
 
-// Rutas a los archivos JSON
 const compradoresPath = path.join(__dirname, 'compradores.json');
 const rrppPath = path.join(__dirname, 'rrpp.json'); 
 const bebidaPath = path.join(__dirname, 'bebida.json');
 const valesOtorgadosPath = path.join(__dirname, 'vales-otorgados.json'); 
 const stockInsumosPath = path.join(__dirname, 'stock-insumos.json');
+const tandasPath = path.join(__dirname, 'tandas.json'); // NUEVO: precios de entradas por tanda
+const gastosPath = path.join(__dirname, 'gastos.json'); // NUEVO: gastos del evento (nombre, descripción, precio)
 
 // Almacenamiento temporal en memoria para las sesiones activas
 const sesionesActivas = {};
 const DURACION_SESION_MS = 2 * 60 * 60 * 1000; 
 
-// ==========================================
-// CATÁLOGO DE PRODUCTOS QUE SE VENDEN EN BARRA (CON PRECIO FIJO)
-// ==========================================
 const CATALOGO_BEBIDAS = {
     'Fernet': 3500,          // Jarra de Fernet con Coca-Cola
     'Cerveza': 2000,
     'Vodka': 3000,           // Jarra de Vodka con Sprite
     'Agua': 1000,
     'Jarra Gaseosa': 1000,   // Jarra de gaseosa sola (Coca-Cola o Sprite, a elección) - AJUSTAR PRECIO SI CORRESPONDE
-    'Lata Energizante': 2500,
-    'Trago Especial': 4500
+    'Lata Energizante': 2500
 };
 
 // ==========================================
@@ -44,8 +42,7 @@ const INSUMOS = {
     'Sprite': { tipo: 'botella' },
     'Cerveza': { tipo: 'unidad' },
     'Agua': { tipo: 'unidad' },
-    'Lata Energizante': { tipo: 'unidad' },
-    'Trago Especial': { tipo: 'unidad' }
+    'Lata Energizante': { tipo: 'unidad' }
 };
 
 // ==========================================
@@ -63,8 +60,6 @@ const RECETAS = {
     'Cerveza': [{ insumo: 'Cerveza', fraccion: 1 }],
     'Agua': [{ insumo: 'Agua', fraccion: 1 }],
     'Lata Energizante': [{ insumo: 'Lata Energizante', fraccion: 1 }],
-    'Trago Especial': [{ insumo: 'Trago Especial', fraccion: 1 }]
-    // 'Jarra Gaseosa' se resuelve aparte porque depende del sabor elegido (ver calcularConsumoInsumos)
 };
 
 // Calcula cuánto se consume de cada insumo para una venta puntual
@@ -86,13 +81,35 @@ function calcularConsumoInsumos(venta) {
 }
 
 // ==========================================
+// TANDAS DE ENTRADAS (precios que van cambiando: primera, segunda, tercera)
+// Se persisten en tandas.json para poder actualizarlas desde el panel de admin
+// sin tener que tocar el código ni reiniciar el servidor.
+// ==========================================
+async function leerTandas() {
+    try {
+        const data = await fs.readFile(tandasPath, 'utf-8');
+        return JSON.parse(data);
+    } catch (error) {
+        // Si el archivo no existe todavía, lo creamos con valores por defecto
+        const porDefecto = {
+            primera: 5000,
+            segunda: 7000,
+            tercera: 10000,
+            tandaActiva: 'primera' 
+        };
+        await guardarArchivo(tandasPath, porDefecto);
+        return porDefecto;
+    }
+}
+
+// ==========================================
 // CONFIGURACIÓN DE NODEMAILER
 // ==========================================
 const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
-    user: "baco.producciones26@gmail.com",
-    pass: "yodt bnca jkxy uaty"
+    user: process.env.GMAILAPI,
+    pass: process.env.PASSAPI
   }
 });
 
@@ -225,29 +242,77 @@ app.post('/api/auth/login', async (req, res) => {
 });
 
 // ==========================================
+// RUTAS DE TANDAS (consulta pública para vendedores, edición solo admin)
+// ==========================================
+
+// Cualquier rrpp o admin puede consultar los precios vigentes antes de vender
+app.get('/api/tandas', verificarSesion(['rrpp', 'barra', 'control']), async (req, res) => {
+    const tandas = await leerTandas();
+    res.json(tandas);
+});
+
+// Solo el admin puede cambiar los precios de cada tanda o cuál está activa
+app.patch('/api/admin/tandas', verificarSesion(['admin']), async (req, res) => {
+    const { primera, segunda, tercera, tandaActiva } = req.body;
+    const tandas = await leerTandas();
+
+    if (primera !== undefined) {
+        const p = parseFloat(primera);
+        if (isNaN(p) || p < 0) return res.status(400).json({ error: 'Precio de primera tanda inválido' });
+        tandas.primera = p;
+    }
+    if (segunda !== undefined) {
+        const p = parseFloat(segunda);
+        if (isNaN(p) || p < 0) return res.status(400).json({ error: 'Precio de segunda tanda inválido' });
+        tandas.segunda = p;
+    }
+    if (tercera !== undefined) {
+        const p = parseFloat(tercera);
+        if (isNaN(p) || p < 0) return res.status(400).json({ error: 'Precio de tercera tanda inválido' });
+        tandas.tercera = p;
+    }
+    if (tandaActiva !== undefined) {
+        if (!['primera', 'segunda', 'tercera'].includes(tandaActiva)) {
+            return res.status(400).json({ error: 'tandaActiva debe ser: primera, segunda o tercera' });
+        }
+        tandas.tandaActiva = tandaActiva;
+    }
+
+    await guardarArchivo(tandasPath, tandas);
+    res.json({ mensaje: 'Tandas actualizadas correctamente', tandas });
+});
+
+// ==========================================
 // RUTAS PROTEGIDAS CON ACCESO SEGÚN ROL
 // ==========================================
 
-app.post('/api/registrar', verificarSesion(['rrpp']), async (req, res) => {
-    const { nombre, email } = req.body;
-    
-    if (!nombre || !email) {
-        return res.status(400).json({ error: 'Faltan datos requeridos' });
-    }
-
+// Helper compartido: arma el ticket, genera el QR, manda el mail y lo persiste.
+// Lo usan tanto /api/registrar (RRPP, siempre general) como /api/admin/registrar-especial (admin, cumpleaños/2x1).
+async function crearTicketYEnviarMail({ nombre, email, tipoTicket, tanda, cantidadPersonas, precio, vendedorId }, res) {
     const compradores = await leerArchivo(compradoresPath);
-    
+
     const nuevoTicket = {
-        id: uuidv4().split('-')[0], 
+        id: uuidv4().split('-')[0],
         nombre,
         email,
+        tipoTicket,
+        tanda,
+        cantidadPersonas,
+        precio,
         asistio: false,
-        vendedorId: req.usuarioSesion.usuarioId, 
+        vendedorId,
         fechaRegistro: new Date().toISOString()
     };
 
     const urlValidacion = `http://localhost:5173/validar/${nuevoTicket.id}`;
     const qrImagenUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(urlValidacion)}`;
+
+    let etiquetaTipo = `Entrada General · Tanda ${tanda}`;
+    if (tipoTicket === 'cumpleanos') {
+        etiquetaTipo = `🎂 Lista de Cumpleaños · ${cantidadPersonas} persona${cantidadPersonas > 1 ? 's' : ''} en total`;
+    } else if (tipoTicket === '2x1') {
+        etiquetaTipo = `🎉 2x1 · Tanda ${tanda} · ingresan 2 personas`;
+    }
 
     const mailOptions = {
         from: '"Control de Accesos Baco" <baco.producciones26@gmail.com>',
@@ -257,6 +322,7 @@ app.post('/api/registrar', verificarSesion(['rrpp']), async (req, res) => {
             <div style="font-family: sans-serif; background-color: #111827; color: #ffffff; padding: 30px; text-align: center; max-width: 500px; margin: 0 auto; border-radius: 12px; border: 1px solid #1f2937;">
                 <h2 style="color: #818cf8; font-size: 24px; margin-bottom: 10px;">¡Hola, ${nombre}!</h2>
                 <p style="color: #9ca3af; font-size: 16px;">Tu entrada para el evento se procesó con éxito.</p>
+                <p style="color: #a5b4fc; font-size: 14px; font-weight: bold; margin-bottom: 5px;">${etiquetaTipo}</p>
                 <p style="color: #9ca3af; font-size: 14px; margin-bottom: 25px;">Presentá este código QR en tu celular al ingresar a la puerta.</p>
                 
                 <div style="background-color: #ffffff; padding: 15px; display: inline-block; border-radius: 8px; margin-bottom: 25px;">
@@ -272,11 +338,83 @@ app.post('/api/registrar', verificarSesion(['rrpp']), async (req, res) => {
         await transporter.sendMail(mailOptions);
         compradores.push(nuevoTicket);
         await guardarArchivo(compradoresPath, compradores);
-        res.status(201).json({ mensaje: `¡Registro exitoso! La entrada con el QR fue enviada a: ${email}` });
+        res.status(201).json({ mensaje: `¡Registro exitoso! La entrada con el QR fue enviada a: ${email}`, ticket: nuevoTicket });
     } catch (error) {
         console.error("Error en Nodemailer:", error);
         res.status(500).json({ error: 'No se pudo enviar el correo electrónico con el QR.' });
     }
+}
+
+// RUTA DEL RRPP: siempre genera una entrada GENERAL, a la tanda vigente.
+// El RRPP no elige tanda, ni carga cumpleaños ni 2x1 — eso es exclusivo del admin.
+app.post('/api/registrar', verificarSesion(['rrpp']), async (req, res) => {
+    const { nombre, email } = req.body;
+
+    if (!nombre || !email) {
+        return res.status(400).json({ error: 'Faltan datos requeridos (nombre y email)' });
+    }
+
+    const tandas = await leerTandas();
+    const tandaActiva = tandas.tandaActiva;
+    const precio = tandas[tandaActiva];
+
+    await crearTicketYEnviarMail({
+        nombre,
+        email,
+        tipoTicket: 'general',
+        tanda: tandaActiva,
+        cantidadPersonas: 1,
+        precio,
+        vendedorId: req.usuarioSesion.usuarioId
+    }, res);
+});
+
+// RUTA EXCLUSIVA DEL ADMIN: cumpleaños (gratis, con acompañantes) y 2x1 (una tanda, ingresan 2)
+app.post('/api/admin/registrar-especial', verificarSesion(['admin']), async (req, res) => {
+    const { nombre, email, tipoTicket, tanda, cantidadPersonas } = req.body;
+
+    if (!nombre || !email) {
+        return res.status(400).json({ error: 'Faltan datos requeridos (nombre y email)' });
+    }
+
+    if (!['cumpleanos', '2x1'].includes(tipoTicket)) {
+        return res.status(400).json({ error: 'tipoTicket inválido. Debe ser: cumpleanos o 2x1' });
+    }
+
+    let precioFinal = 0;
+    let tandaFinal = null;
+    let personas = 1;
+
+    if (tipoTicket === 'cumpleanos') {
+        const acompanantes = parseInt(cantidadPersonas);
+        if (!Number.isInteger(acompanantes) || acompanantes < 0) {
+            return res.status(400).json({ error: 'Para la lista de cumpleaños hay que indicar cantidadPersonas (acompañantes) como un número válido (0 o más)' });
+        }
+        precioFinal = 0;
+        personas = acompanantes + 1;
+
+    } else if (tipoTicket === '2x1') {
+        const tandas = await leerTandas();
+        const tandaElegida = tanda || tandas.tandaActiva;
+
+        if (!['primera', 'segunda', 'tercera'].includes(tandaElegida)) {
+            return res.status(400).json({ error: 'tanda inválida. Debe ser: primera, segunda o tercera' });
+        }
+
+        precioFinal = tandas[tandaElegida];
+        tandaFinal = tandaElegida;
+        personas = 2;
+    }
+
+    await crearTicketYEnviarMail({
+        nombre,
+        email,
+        tipoTicket,
+        tanda: tandaFinal,
+        cantidadPersonas: personas,
+        precio: precioFinal,
+        vendedorId: 'ADMIN-ESPECIAL'
+    }, res);
 });
 
 app.get('/api/bebidas/catalogo', verificarSesion(['barra']), (req, res) => {
@@ -325,6 +463,8 @@ app.post('/api/bebidas/anotar', verificarSesion(['barra']), async (req, res) => 
     res.status(201).json({ mensaje: 'Bebida anotada correctamente', venta: nuevaVenta });
 });
 
+// ACTUALIZADO: ahora informa cuántas personas ingresan y el tipo de ticket (útil para
+// tickets de cumpleaños o 2x1, donde con un solo QR entra más de una persona)
 app.patch('/api/validar/:id', verificarSesion(['rrpp', 'control']), async (req, res) => {
     const { id } = req.params;
     const compradores = await leerArchivo(compradoresPath);
@@ -338,16 +478,28 @@ app.patch('/api/validar/:id', verificarSesion(['rrpp', 'control']), async (req, 
     if (comprador.asistio) {
         return res.status(200).json({ 
             estado: 'REPETIDO', 
-            mensaje: `¡ALERTA! Este ticket ya ingresó. Pertenece a ${comprador.nombre}` 
+            mensaje: `¡ALERTA! Este ticket ya ingresó. Pertenece a ${comprador.nombre}`,
+            cantidadPersonas: comprador.cantidadPersonas || 1,
+            tipoTicket: comprador.tipoTicket || 'general'
         });
     }
 
     comprador.asistio = true;
     await guardarArchivo(compradoresPath, compradores);
 
+    let mensajeExtra = '';
+    if (comprador.tipoTicket === 'cumpleanos') {
+        mensajeExtra = ` — 🎂 Cumpleaños: ingresan ${comprador.cantidadPersonas} persona(s) en total.`;
+    } else if (comprador.tipoTicket === '2x1') {
+        mensajeExtra = ' — 🎉 2x1: ingresan 2 personas con este QR.';
+    }
+
     res.status(200).json({ 
         estado: 'VALIDO', 
-        mensaje: `¡Acceso concedido! Bienvenido/a, ${comprador.nombre}.` 
+        mensaje: `¡Acceso concedido! Bienvenido/a, ${comprador.nombre}.${mensajeExtra}`,
+        cantidadPersonas: comprador.cantidadPersonas || 1,
+        tipoTicket: comprador.tipoTicket || 'general',
+        tanda: comprador.tanda || null
     });
 });
 
@@ -385,6 +537,64 @@ app.get('/api/admin/total-bebidas', verificarSesion(['admin']), async (req, res)
     res.json({ total: totalBebidas, montoTotal: montoTotal });
 });
 
+// NUEVO: dinero recaudado por entradas, desglosado por tipo de ticket y por tanda.
+// Los tickets de cumpleaños siempre suman $0, tal como se pidió.
+app.get('/api/admin/total-entradas', verificarSesion(['admin']), async (req, res) => {
+    const compradores = await leerArchivo(compradoresPath);
+
+    const resumenPorTipo = {
+        general: { cantidadTickets: 0, personasTotales: 0, personasIngresadas: 0, monto: 0 },
+        '2x1': { cantidadTickets: 0, personasTotales: 0, personasIngresadas: 0, monto: 0 },
+        cumpleanos: { cantidadTickets: 0, personasTotales: 0, personasIngresadas: 0, monto: 0 },
+        regalo: { cantidadTickets: 0, personasTotales: 0, personasIngresadas: 0, monto: 0 } // entradas otorgadas por el admin
+    };
+
+    const resumenPorTanda = {
+        primera: { cantidadTickets: 0, monto: 0 },
+        segunda: { cantidadTickets: 0, monto: 0 },
+        tercera: { cantidadTickets: 0, monto: 0 }
+    };
+
+    let montoTotal = 0;
+    let personasVendidasTotal = 0;
+    let personasIngresadasTotal = 0;
+
+    compradores.forEach(c => {
+        const tipo = c.tipoTicket || 'general';
+        const personas = c.cantidadPersonas || 1;
+        const precio = c.precio || 0;
+
+        if (resumenPorTipo[tipo]) {
+            resumenPorTipo[tipo].cantidadTickets += 1;
+            resumenPorTipo[tipo].personasTotales += personas;
+            resumenPorTipo[tipo].monto += precio;
+            if (c.asistio) {
+                resumenPorTipo[tipo].personasIngresadas += personas;
+            }
+        }
+
+        if (c.tanda && resumenPorTanda[c.tanda]) {
+            resumenPorTanda[c.tanda].cantidadTickets += 1;
+            resumenPorTanda[c.tanda].monto += precio;
+        }
+
+        montoTotal += precio;
+        personasVendidasTotal += personas;
+        if (c.asistio) {
+            personasIngresadasTotal += personas;
+        }
+    });
+
+    res.json({
+        montoTotal,
+        personasVendidasTotal,
+        personasIngresadasTotal,
+        porTipo: resumenPorTipo,
+        porTanda: resumenPorTanda
+    });
+});
+
+// ACTUALIZADO: ahora también muestra el dinero y la cantidad de personas que generó cada RRPP
 app.get('/api/admin/listado-rrpp', verificarSesion(['admin']), async (req, res) => {
     const usuarios = await leerArchivo(rrppPath);
     const compradores = await leerArchivo(compradoresPath);
@@ -392,13 +602,19 @@ app.get('/api/admin/listado-rrpp', verificarSesion(['admin']), async (req, res) 
     const listaRrpp = usuarios
         .filter(u => u.rol === 'rrpp')
         .map(u => {
-            const entradasVendidas = compradores.filter(c => c.vendedorId === u.id).length;
+            const entradasDelVendedor = compradores.filter(c => c.vendedorId === u.id);
+            const entradasVendidas = entradasDelVendedor.length;
+            const personasVendidas = entradasDelVendedor.reduce((acc, c) => acc + (c.cantidadPersonas || 1), 0);
+            const montoGenerado = entradasDelVendedor.reduce((acc, c) => acc + (c.precio || 0), 0);
+
             return {
                 _id: u.id,
                 nombre: u.nombre,
                 usuario: u.usuario,
                 historias: u.historias || 0,
-                entradasVendidas: entradasVendidas
+                entradasVendidas,
+                personasVendidas,
+                montoGenerado
             };
         });
     res.json(listaRrpp);
@@ -519,6 +735,10 @@ app.post('/api/admin/otorgar-vale', verificarSesion(['admin']), async (req, res)
             id: ticketId,
             nombre: `${rrpp.nombre} (Premio Staff)`,
             email: correoDestinatario,
+            tipoTicket: 'regalo', // entrada otorgada por el admin, no suma dinero
+            tanda: null,
+            cantidadPersonas: 1,
+            precio: 0,
             asistio: false,
             vendedorId: `ADMIN-PREMIO`, 
             fechaRegistro: new Date().toISOString()
@@ -602,6 +822,68 @@ app.post('/api/admin/otorgar-vale', verificarSesion(['admin']), async (req, res)
     } else {
         return res.status(400).json({ error: 'Tipo de premio no soportado.' });
     }
+});
+
+// ==========================================
+// GASTOS DEL EVENTO (nombre, descripción, precio) — exclusivo de admin
+// ==========================================
+
+// Lista todos los gastos cargados + el total acumulado
+app.get('/api/admin/gastos', verificarSesion(['admin']), async (req, res) => {
+    const gastos = await leerArchivo(gastosPath);
+    const totalGastos = gastos.reduce((acumulador, gasto) => acumulador + (gasto.precio || 0), 0);
+
+    res.json({ gastos, totalGastos });
+});
+
+// Carga un nuevo gasto
+app.post('/api/admin/gastos', verificarSesion(['admin']), async (req, res) => {
+    const { nombre, descripcion, precio } = req.body;
+
+    if (!nombre || !descripcion) {
+        return res.status(400).json({ error: 'Faltan datos: nombre y descripción son obligatorios.' });
+    }
+
+    const precioNum = parseFloat(precio);
+    if (isNaN(precioNum) || precioNum < 0) {
+        return res.status(400).json({ error: 'El precio debe ser un número mayor o igual a 0.' });
+    }
+
+    const gastos = await leerArchivo(gastosPath);
+
+    const nuevoGasto = {
+        id: uuidv4().split('-')[0],
+        nombre,
+        descripcion,
+        precio: precioNum,
+        registradoPor: req.usuarioSesion.usuarioId,
+        fechaRegistro: new Date().toISOString()
+    };
+
+    gastos.push(nuevoGasto);
+    await guardarArchivo(gastosPath, gastos);
+
+    const totalGastos = gastos.reduce((acumulador, gasto) => acumulador + (gasto.precio || 0), 0);
+
+    res.status(201).json({ mensaje: 'Gasto registrado correctamente', gasto: nuevoGasto, totalGastos });
+});
+
+// Elimina un gasto cargado por error
+app.delete('/api/admin/gastos/:id', verificarSesion(['admin']), async (req, res) => {
+    const { id } = req.params;
+    const gastos = await leerArchivo(gastosPath);
+
+    const index = gastos.findIndex(g => g.id === id);
+    if (index === -1) {
+        return res.status(404).json({ error: 'Gasto no encontrado.' });
+    }
+
+    gastos.splice(index, 1);
+    await guardarArchivo(gastosPath, gastos);
+
+    const totalGastos = gastos.reduce((acumulador, gasto) => acumulador + (gasto.precio || 0), 0);
+
+    res.json({ mensaje: 'Gasto eliminado correctamente', totalGastos });
 });
 
 // ==========================================

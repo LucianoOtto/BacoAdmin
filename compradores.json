@@ -54,5 +54,17 @@
     "asistio": false,
     "vendedorId": "ADMIN-PREMIO",
     "fechaRegistro": "2026-07-02T16:22:26.462Z"
+  },
+  {
+    "id": "92762b2f",
+    "nombre": "luciano",
+    "email": "lucianootto11@gmail.com",
+    "tipoTicket": "general",
+    "tanda": "primera",
+    "cantidadPersonas": 1,
+    "precio": 5000,
+    "asistio": false,
+    "vendedorId": "05271d27",
+    "fechaRegistro": "2026-07-05T17:58:48.243Z"
   }
 ]
