@@ -14,7 +14,7 @@
     "bcrypt": "^6.0.0",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
-    "express": "^5.2.1",
+    "express": "^4.21.2",
     "fs": "^0.0.1-security",
     "nodemailer": "^8.0.10",
     "nodemon": "^3.1.14",
