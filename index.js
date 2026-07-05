@@ -233,6 +233,10 @@ app.post('/api/auth/registrar-personal', async (req, res) => {
     res.status(201).json({ mensaje: 'Usuario registrado con éxito', rol: nuevoUsuario.rol });
 });
 
+app.post('/test', (req, res) => {
+    res.json({ ok: true });
+});
+
 app.post('/api/auth/login', async (req, res) => {
     console.log("Entró al login");
     console.log(req.body);
