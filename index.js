@@ -122,17 +122,12 @@ async function leerTandas() {
 // CONFIGURACIÓN DE NODEMAILER
 // ==========================================
 const transporter = nodemailer.createTransport({
-  service: "gmail",
-  host: "173.194.77.108",
-  port: 465,              
-  secure: true,           
-  family: 4,
+  host: "smtp.gmail.com",
+  port: 587,             // 👈 Cambiamos al puerto 587
+  secure: false,         // 👈 False para que use STARTTLS en el puerto 587
   auth: {
     user: process.env.GMAILAPI,
     pass: process.env.PASSAPI
-  },
-  tls: {
-    rejectUnauthorized: false 
   }
 });
 
