@@ -8,25 +8,30 @@ const nodemailer = require('nodemailer');
 
 const app = express();
 require('dotenv').config();
+
 app.use(express.json());
-app.use(cors({
-  origin: function (origin, callback) {
-    // Permitir peticiones sin origen (como Postman o el propio servidor) o las que estén en la lista
-    if (!origin || origenesPermitidos.indexOf(origin) !== -1) {
+
+const origenesPermitidos = [
+  'http://localhost:5173',
+  'https://animated-platypus-df4a3d.netlify.app'
+];
+
+const corsOptions = {
+  origin(origin, callback) {
+    if (!origin || origenesPermitidos.includes(origin)) {
       callback(null, true);
     } else {
-      callback(new Error('Bloqueado por políticas de CORS de BacoTickets'));
+      callback(new Error('No permitido'));
     }
   },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-})); 
+  methods: ['GET','POST','PUT','PATCH','DELETE','OPTIONS'],
+  allowedHeaders: ['Content-Type','Authorization']
+};
 
-const origenesPermitidos = [
-  'http://localhost:5173',                         
-  'https://animated-platypus-df4a3d.netlify.app' 
-];
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
+
 const compradoresPath = path.join(__dirname, 'compradores.json');
 const rrppPath = path.join(__dirname, 'rrpp.json'); 
 const bebidaPath = path.join(__dirname, 'bebida.json');
