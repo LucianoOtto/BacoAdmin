@@ -122,19 +122,15 @@ async function leerTandas() {
     }
 }
 
+console.log("GMAILAPI:", process.env.GMAILAPI);
+console.log("PASSAPI existe:", !!process.env.PASSAPI);
+
 
 const transporter = nodemailer.createTransport({
-  host: "smtp.gmail.com",
-  port: 587,
-  secure: false, // Debe ser false para el puerto 587
-  requireTLS: true, // 👈 FUERZA a que la conexión use TLS obligatorio
+  service: "gmail",
   auth: {
     user: process.env.GMAILAPI,
     pass: process.env.PASSAPI
-  },
-  tls: {
-    ciphers: 'SSLv3', 
-    rejectUnauthorized: false
   }
 });
 
