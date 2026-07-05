@@ -234,6 +234,8 @@ app.post('/api/auth/registrar-personal', async (req, res) => {
 });
 
 app.post('/api/auth/login', async (req, res) => {
+    console.log("Entró al login");
+    console.log(req.body);
     const { usuario, password } = req.body;
     const personal = await leerArchivo(rrppPath);
 
@@ -910,10 +912,12 @@ app.delete('/api/admin/gastos/:id', verificarSesion(['admin']), async (req, res)
 
     res.json({ mensaje: 'Gasto eliminado correctamente', totalGastos });
 });
-
-// ==========================================
-// ARRANQUE DEL SERVIDOR
-// ==========================================
+app.use((err, req, res, next) => {
+    console.error("ERROR GLOBAL:", err);
+    res.status(500).json({
+        error: err.message
+    });
+});
 const PORT = 3000;
 app.listen(PORT, () => {
     console.log(`🚀 Servidor de BacoTickets corriendo en: http://localhost:${PORT}`);
