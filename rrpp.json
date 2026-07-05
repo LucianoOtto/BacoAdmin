@@ -6,40 +6,6 @@
     "password": "$2b$10$LdRyA8IshM2p3R3I2o6fjO.itPun727eSHsX4cDcT.vULAsSDOFDu",
     "rol": "admin",
     "historias": 0
-  },
-  {
-    "id": "057b2034",
-    "nombre": "Luciano Otto",
-    "usuario": "Luciano",
-    "password": "$2b$10$ifyMESsUYsqep13binsdKONFvCbZ0mSuYItphSwIeR6NxKhHL30cK",
-    "rol": "rrpp",
-    "historias": 0
-  },
-  {
-    "id": "05271d27",
-    "nombre": "totop",
-    "usuario": "toto",
-    "password": "$2b$10$kgb.XRDzockQ.Q9unBWIy.n32TXyikWpsNQgTslFMBJeeFVgRX366",
-    "rol": "rrpp",
-    "email": "lucianootto11@gmail.com",
-    "historias": 0
-  },
-  {
-    "id": "839f5e96",
-    "nombre": "titi",
-    "usuario": "titi",
-    "password": "$2b$10$GTJVmda1GSRn15YfXM6VeOC1N1jbLw3BprYz7wJ4NmPzkeajwEABi",
-    "rol": "barra",
-    "email": "titi@titi.com",
-    "historias": 0
-  },
-  {
-    "id": "dd765277",
-    "nombre": "Tobyiyi",
-    "usuario": "Tobyiyi",
-    "password": "$2b$10$XPVuwYp3aoqH53AV0OuOB.O06T1GfHg.SaTBe27ax2P7ycjFSDfkK",
-    "rol": "rrpp",
-    "email": "Barber.loop24@gmail.com",
-    "historias": 0
   }
+
 ]

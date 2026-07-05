@@ -1,22 +1,3 @@
 [
-  {
-    "id": "0e7fab97",
-    "codigo": "BACO-F2167CE7",
-    "rrppId": "05271d27",
-    "rrppNombre": "totop",
-    "premio": "2 Fernet",
-    "fechaEntrega": "2026-07-02T16:13:47.963Z",
-    "estado": "CANJEADO",
-    "fechaCanje": "2026-07-02T16:20:05.260Z",
-    "atendidoPor": "839f5e96"
-  },
-  {
-    "id": "db14a6ff",
-    "codigo": "BACO-9A18E65A",
-    "rrppId": "dd765277",
-    "rrppNombre": "Tobyiyi",
-    "premio": "2 Fernet",
-    "fechaEntrega": "2026-07-02T16:22:05.123Z",
-    "estado": "PENDIENTE"
-  }
+
 ]
