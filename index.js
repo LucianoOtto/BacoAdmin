@@ -123,13 +123,16 @@ async function leerTandas() {
 // ==========================================
 const transporter = nodemailer.createTransport({
   service: "gmail",
-  host: "smtp.gmail.com",
+  host: "173.194.77.108",
   port: 465,              
   secure: true,           
   family: 4,
   auth: {
     user: process.env.GMAILAPI,
     pass: process.env.PASSAPI
+  },
+  tls: {
+    rejectUnauthorized: false 
   }
 });
 
