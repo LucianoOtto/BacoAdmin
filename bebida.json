@@ -16,5 +16,14 @@
     "precioTotal": 3500,
     "encargadoId": "839f5e96",
     "fechaVenta": "2026-07-04T15:23:38.048Z"
+  },
+  {
+    "id": "3644cfd4",
+    "producto": "Fernet",
+    "cantidad": 4,
+    "precioUnitario": 3500,
+    "precioTotal": 14000,
+    "encargadoId": "839f5e96",
+    "fechaVenta": "2026-07-05T18:25:32.867Z"
   }
 ]
