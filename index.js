@@ -7,8 +7,11 @@ const { v4: uuidv4 } = require('uuid');
 
 require('dotenv').config();
 
-const { Resend } = require('resend');
-const resend = new Resend(process.env.RESEND_API_KEY);
+const SibApiV3Sdk = require('@getbrevo/brevo');
+
+const apiInstance = new SibApiV3Sdk.TransactionalEmailsApi();
+const apiKey = apiInstance.authentications['apiKey'];
+apiKey.apiKey = process.env.BREVO_API_KEY;
 
 const app = express();
 const pool = require('./db'); // Pool de conexión a Postgres
@@ -48,26 +51,6 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 
-// ==================== SESIONES (persistentes en Postgres) ====================
-// ANTES: las sesiones vivían en un objeto en memoria (sesionesActivas = {}).
-// Eso hacía que, cada vez que el servidor se reiniciaba (por ejemplo, si el
-// hosting "duerme" el proceso por inactividad y lo levanta de nuevo en el
-// próximo request), TODAS las sesiones activas se perdían. El personal de
-// control quedaba con un token guardado en el navegador que el backend ya
-// no reconocía, entonces cualquier request protegido (como validar el QR)
-// devolvía 401 y el frontend los mandaba al login sin validar nada.
-//
-// Ahora las sesiones se guardan en la tabla `sesiones` de Postgres, así
-// sobreviven a reinicios del servidor. Requiere correr esta migración una
-// sola vez en la base:
-//
-// CREATE TABLE IF NOT EXISTS sesiones (
-//     token TEXT PRIMARY KEY,
-//     usuario_id TEXT NOT NULL,
-//     nombre TEXT NOT NULL,
-//     rol TEXT NOT NULL,
-//     expira TIMESTAMPTZ NOT NULL
-// );
 
 const DURACION_SESION_MS = 2 * 60 * 60 * 1000;
 
@@ -433,7 +416,7 @@ async function crearTicketYEnviarMail({ nombre, email, tipoTicket, tanda, cantid
     const urlValidacion = `${FRONTEND_URL}/validar/${id}`;
     const qrImagenUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(urlValidacion)}`;
 
-    let etiquetaTipo = `Entrada General · Tanda ${tanda}`;
+    let etiquetaTipo = `Entrada General · Tanda: ${tanda}`;
     if (tipoTicket === 'cumpleanos') {
         etiquetaTipo = `🎂 Lista de Cumpleaños · ${cantidadPersonas} persona${cantidadPersonas > 1 ? 's' : ''} en total`;
     } else if (tipoTicket === '2x1') {
@@ -454,27 +437,29 @@ async function crearTicketYEnviarMail({ nombre, email, tipoTicket, tanda, cantid
     `;
 
     // 3. Enviar el correo usando Resend (vía HTTPS - Puerto 443)
-    let mailEnviado = true;
-    try {
-        await resend.emails.send({
-            from: 'Baco Tickets <onboarding@resend.dev>', // Dominio de prueba que incluye Resend por defecto
-            to: [email],
-            subject: `¡Tu entrada para el Evento está lista! 🎟️ - ${nombre}`,
-            html: plantillaEmail(contenidoHtml),
-            attachments: adjuntosLogo() // <-- antes faltaba: sin esto el cid del logo no resolvía nada
-        });
-    } catch (mailError) {
-        console.error("⚠️ Error en Resend:", mailError.message);
-        mailEnviado = false;
+    // 3. Enviar el correo usando Brevo
+let mailEnviado = true;
+try {
+    const sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail();
+
+    sendSmtpEmail.subject = `¡Tu entrada para el Evento está lista! 🎟️ - ${nombre}`;
+    sendSmtpEmail.htmlContent = plantillaEmail(contenidoHtml);
+    sendSmtpEmail.sender = { name: "Baco Tickets", email: "tu_mail_verificado_en_brevo@gmail.com" };
+    sendSmtpEmail.to = [{ email: email, name: nombre }];
+
+    // Adjuntar el logo en Base64 para Brevo
+    if (LOGO_BASE64) {
+        sendSmtpEmail.attachment = [{
+            name: "baco-logo.png",
+            content: LOGO_BASE64
+        }];
     }
 
-    // 4. Respuesta
-    return res.status(201).json({
-        mensaje: mailEnviado
-            ? `¡Registro exitoso! La entrada con el QR fue enviada a: ${email}`
-            : `¡Registro exitoso! Entrada guardada (⚠️ no se pudo enviar el mail a ${email}).`,
-        ticket: { id, nombre, email, tipoTicket, tanda, cantidadPersonas, precio, asistio: false, vendedorId, fechaRegistro }
-    });
+    await apiInstance.sendTransacEmail(sendSmtpEmail);
+} catch (mailError) {
+    console.error("⚠️ Error en Brevo:", mailError.message || mailError);
+    mailEnviado = false;
+}
 }
 
 app.post('/api/registrar', verificarSesion(['rrpp']), async (req, res, next) => {
