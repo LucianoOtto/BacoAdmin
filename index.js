@@ -380,8 +380,8 @@ async function crearTicketYEnviarMail({ nombre, email, tipoTicket, tanda, cantid
         return res.status(500).json({ error: 'Error al registrar la entrada en la base de datos.' });
     }
 
-    // 2. Generar QR y HTML
-    const urlValidacion = `http://localhost:5173/validar/${id}`;
+    const FRONTEND_URL = process.env.FRONTEND_URL
+    const urlValidacion = `${FRONTEND_URL}/validar/${id}`
     const qrImagenUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(urlValidacion)}`;
 
     let etiquetaTipo = `Entrada General · Tanda ${tanda}`;
@@ -847,7 +847,8 @@ app.post('/api/admin/otorgar-vale', verificarSesion(['admin']), async (req, res,
         if (tipoPremio === 'entrada') {
             const ticketId = uuidv4().split('-')[0];
 
-            const urlValidacion = `http://localhost:5173/validar/${ticketId}`;
+            const FRONTEND_URL = process.env.FRONTEND_URL
+            const urlValidacion = `${FRONTEND_URL}/validar/${id}`
             const qrImagenUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(urlValidacion)}`;
 
             const contenidoHtml = `
