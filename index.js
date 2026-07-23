@@ -7,11 +7,6 @@ const { v4: uuidv4 } = require('uuid');
 
 require('dotenv').config();
 
-const Brevo = require('@getbrevo/brevo');
-
-const apiInstance = new Brevo.TransactionalEmailsApi();
-apiInstance.setApiKey(Brevo.TransactionalEmailsApiApiKeys.apiKey, process.env.BREVO_API_KEY);
-
 const app = express();
 const pool = require('./db'); // Pool de conexión a Postgres
 
@@ -49,7 +44,6 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
-
 
 const DURACION_SESION_MS = 2 * 60 * 60 * 1000;
 
