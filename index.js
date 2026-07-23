@@ -102,9 +102,14 @@ function calcularConsumoInsumos(venta) {
 
 const transporter = nodemailer.createTransport({
   service: 'gmail',
+  family: 4, // 👈 Fuerza IPv4 a nivel de socket
   auth: {
     user: process.env.GMAILAPI,
-    pass: process.env.PASSAPI // Contraseña de aplicación de 16 caracteres
+    pass: process.env.PASSAPI
+  },
+  // Fuerza la resolución DNS a usar solo registros A (IPv4)
+  dns: {
+    family: 4
   }
 });
 
