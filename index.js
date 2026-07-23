@@ -3,7 +3,9 @@ const cors = require('cors');
 const path = require('path');
 const bcrypt = require('bcrypt');
 const { v4: uuidv4 } = require('uuid');
-const nodemailer = require('nodemailer');
+//const nodemailer = require('nodemailer');
+const { Resend } = require('resend');
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 require('dotenv').config();
 
@@ -100,26 +102,6 @@ function calcularConsumoInsumos(venta) {
 }
 
 
-const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  family: 4, // 👈 Fuerza IPv4 a nivel de socket
-  auth: {
-    user: process.env.GMAILAPI,
-    pass: process.env.PASSAPI
-  },
-  // Fuerza la resolución DNS a usar solo registros A (IPv4)
-  dns: {
-    family: 4
-  }
-});
-
-transporter.verify((error, success) => {
-  if (error) {
-    console.error('❌ Error de conexión SMTP:', error.message);
-  } else {
-    console.log('📧 Servidor SMTP listo para enviar correos');
-  }
-});
 
 const LOGO_PATH = path.join(__dirname, 'assets', 'BACO-Produ-Blanco.png');
 const LOGO_CID = 'logoBacoProducciones';
@@ -385,7 +367,7 @@ async function crearTicketYEnviarMail({ nombre, email, tipoTicket, tanda, cantid
     const id = uuidv4().split('-')[0];
     const fechaRegistro = new Date().toISOString();
 
-    // 1. Guardar primero en la Base de Datos
+    // 1. Guardar primero en PostgreSQL
     try {
         await pool.query(
             `INSERT INTO compradores (id, nombre, email, tipo_ticket, tanda, cantidad_personas, precio, asistio, vendedor_id, fecha_registro)
@@ -397,11 +379,11 @@ async function crearTicketYEnviarMail({ nombre, email, tipoTicket, tanda, cantid
         return res.status(500).json({ error: 'Error al registrar la entrada en la base de datos.' });
     }
 
-    // 2. Armar mail y QR
+    // 2. Generar QR y HTML
     const urlValidacion = `http://localhost:5173/validar/${id}`;
     const qrImagenUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(urlValidacion)}`;
 
-    let etiquetaTipo = `Entrada General · Tanda: ${tanda}`;
+    let etiquetaTipo = `Entrada General · Tanda ${tanda}`;
     if (tipoTicket === 'cumpleanos') {
         etiquetaTipo = `🎂 Lista de Cumpleaños · ${cantidadPersonas} persona${cantidadPersonas > 1 ? 's' : ''} en total`;
     } else if (tipoTicket === '2x1') {
@@ -421,24 +403,21 @@ async function crearTicketYEnviarMail({ nombre, email, tipoTicket, tanda, cantid
         <p style="font-size: 12px; color: #4b5563; margin-top: 15px; font-family: monospace;">ID único de ticket: ${id}</p>
     `;
 
-    const mailOptions = {
-        from: '"Control de Accesos Baco" <baco.producciones26@gmail.com>',
-        to: email,
-        subject: `¡Tu entrada para el Evento está lista! 🎟️ - ${nombre}`,
-        html: plantillaEmail(contenidoHtml),
-        attachments: adjuntosLogo()
-    };
-
-    // 3. Intentar enviar el mail sin romper la respuesta del usuario si falla
+    // 3. Enviar el correo usando Resend (vía HTTPS - Puerto 443)
     let mailEnviado = true;
     try {
-        await transporter.sendMail(mailOptions);
+        await resend.emails.send({
+            from: 'Baco Tickets <onboarding@resend.dev>', // Dominio de prueba que incluye Resend por defecto
+            to: [email],
+            subject: `¡Tu entrada para el Evento está lista! 🎟️ - ${nombre}`,
+            html: plantillaEmail(contenidoHtml)
+        });
     } catch (mailError) {
-        console.error("⚠️ Error en Nodemailer al enviar correo:", mailError.message);
+        console.error("⚠️ Error en Resend:", mailError.message);
         mailEnviado = false;
     }
 
-    // 4. Responder exitosamente 201
+    // 4. Respuesta
     return res.status(201).json({
         mensaje: mailEnviado 
             ? `¡Registro exitoso! La entrada con el QR fue enviada a: ${email}`
