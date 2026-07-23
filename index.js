@@ -7,11 +7,16 @@ const { v4: uuidv4 } = require('uuid');
 
 require('dotenv').config();
 
-const SibApiV3Sdk = require('@getbrevo/brevo');
+const Brevo = require('@getbrevo/brevo');
 
-const apiInstance = new SibApiV3Sdk.TransactionalEmailsApi();
-const apiKey = apiInstance.authentications['apiKey'];
-apiKey.apiKey = process.env.BREVO_API_KEY;
+// Instanciar la API de emails transaccionales
+const apiInstance = new Brevo.TransactionalEmailsApi();
+
+// Configurar la API Key
+apiInstance.setApiKey(
+  Brevo.TransactionalEmailsApiApiKeys.apiKey,
+  process.env.BREVO_API_KEY
+);
 
 const app = express();
 const pool = require('./db'); // Pool de conexión a Postgres
