@@ -4,10 +4,11 @@ const path = require('path');
 const bcrypt = require('bcrypt');
 const { v4: uuidv4 } = require('uuid');
 //const nodemailer = require('nodemailer');
-const { Resend } = require('resend');
-const resend = new Resend(process.env.RESEND_API_KEY);
 
 require('dotenv').config();
+
+const { Resend } = require('resend');
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 const app = express();
 const pool = require('./db'); // Pool de conexión a Postgres
