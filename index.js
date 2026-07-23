@@ -20,7 +20,8 @@ const origenesPermitidos = [
 
 const corsOptions = {
   origin(origin, callback) {
-    if (!origin || origenesPermitidos.includes(origin)) {
+    // Permite peticiones sin origin (Postman, mobile) o los orígenes explícitos
+    if (!origin || origenesPermitidos.includes(origin) || origin.endsWith('.netlify.app')) {
       callback(null, true);
     } else {
       callback(new Error('No permitido por CORS'));
