@@ -101,16 +101,18 @@ function calcularConsumoInsumos(venta) {
 
 
 const transporter = nodemailer.createTransport({
-  host: 'smtp.gmail.com',
-  port: 587,
-  secure: false, // TLS se negociará automáticamente mediante STARTTLS
-  family: 4,
+  service: 'gmail',
   auth: {
     user: process.env.GMAILAPI,
-    pass: process.env.PASSAPI
-  },
-  tls: {
-    rejectUnauthorized: false
+    pass: process.env.PASSAPI // Contraseña de aplicación de 16 caracteres
+  }
+});
+
+transporter.verify((error, success) => {
+  if (error) {
+    console.error('❌ Error de conexión SMTP:', error.message);
+  } else {
+    console.log('📧 Servidor SMTP listo para enviar correos');
   }
 });
 
@@ -394,7 +396,7 @@ async function crearTicketYEnviarMail({ nombre, email, tipoTicket, tanda, cantid
     const urlValidacion = `http://localhost:5173/validar/${id}`;
     const qrImagenUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(urlValidacion)}`;
 
-    let etiquetaTipo = `Entrada General · Tanda ${tanda}`;
+    let etiquetaTipo = `Entrada General · Tanda: ${tanda}`;
     if (tipoTicket === 'cumpleanos') {
         etiquetaTipo = `🎂 Lista de Cumpleaños · ${cantidadPersonas} persona${cantidadPersonas > 1 ? 's' : ''} en total`;
     } else if (tipoTicket === '2x1') {
