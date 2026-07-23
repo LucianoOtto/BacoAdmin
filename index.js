@@ -99,11 +99,19 @@ function calcularConsumoInsumos(venta) {
     }));
 }
 
+const nodemailer = require('nodemailer');
+
 const transporter = nodemailer.createTransport({
-  service: "gmail",
+  host: 'smtp.gmail.com',
+  port: 465,
+  secure: true,
+  family: 4, // 👈 FUERZA EL USO DE IPv4 (Soluciona ENETUNREACH en Render)
   auth: {
     user: process.env.GMAILAPI,
     pass: process.env.PASSAPI
+  },
+  tls: {
+    rejectUnauthorized: false
   }
 });
 
