@@ -102,9 +102,9 @@ function calcularConsumoInsumos(venta) {
 
 const transporter = nodemailer.createTransport({
   host: 'smtp.gmail.com',
-  port: 465,
-  secure: true,
-  family: 4, // 👈 FUERZA EL USO DE IPv4 (Soluciona ENETUNREACH en Render)
+  port: 587,
+  secure: false, // TLS se negociará automáticamente mediante STARTTLS
+  family: 4,
   auth: {
     user: process.env.GMAILAPI,
     pass: process.env.PASSAPI
@@ -378,6 +378,19 @@ async function crearTicketYEnviarMail({ nombre, email, tipoTicket, tanda, cantid
     const id = uuidv4().split('-')[0];
     const fechaRegistro = new Date().toISOString();
 
+    // 1. Guardar primero en la Base de Datos
+    try {
+        await pool.query(
+            `INSERT INTO compradores (id, nombre, email, tipo_ticket, tanda, cantidad_personas, precio, asistio, vendedor_id, fecha_registro)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, false, $8, $9)`,
+            [id, nombre, email, tipoTicket, tanda, cantidadPersonas, precio, vendedorId, fechaRegistro]
+        );
+    } catch (dbError) {
+        console.error("Error guardando en PostgreSQL:", dbError);
+        return res.status(500).json({ error: 'Error al registrar la entrada en la base de datos.' });
+    }
+
+    // 2. Armar mail y QR
     const urlValidacion = `http://localhost:5173/validar/${id}`;
     const qrImagenUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(urlValidacion)}`;
 
@@ -409,23 +422,22 @@ async function crearTicketYEnviarMail({ nombre, email, tipoTicket, tanda, cantid
         attachments: adjuntosLogo()
     };
 
+    // 3. Intentar enviar el mail sin romper la respuesta del usuario si falla
+    let mailEnviado = true;
     try {
         await transporter.sendMail(mailOptions);
-
-        await pool.query(
-            `INSERT INTO compradores (id, nombre, email, tipo_ticket, tanda, cantidad_personas, precio, asistio, vendedor_id, fecha_registro)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, false, $8, $9)`,
-            [id, nombre, email, tipoTicket, tanda, cantidadPersonas, precio, vendedorId, fechaRegistro]
-        );
-
-        res.status(201).json({
-            mensaje: `¡Registro exitoso! La entrada con el QR fue enviada a: ${email}`,
-            ticket: { id, nombre, email, tipoTicket, tanda, cantidadPersonas, precio, asistio: false, vendedorId, fechaRegistro }
-        });
-    } catch (error) {
-        console.error("Error en Nodemailer:", error);
-        res.status(500).json({ error: 'No se pudo enviar el correo electrónico con el QR.' });
+    } catch (mailError) {
+        console.error("⚠️ Error en Nodemailer al enviar correo:", mailError.message);
+        mailEnviado = false;
     }
+
+    // 4. Responder exitosamente 201
+    return res.status(201).json({
+        mensaje: mailEnviado 
+            ? `¡Registro exitoso! La entrada con el QR fue enviada a: ${email}`
+            : `¡Registro exitoso! Entrada guardada (⚠️ no se pudo enviar el mail a ${email}).`,
+        ticket: { id, nombre, email, tipoTicket, tanda, cantidadPersonas, precio, asistio: false, vendedorId, fechaRegistro }
+    });
 }
 
 app.post('/api/registrar', verificarSesion(['rrpp']), async (req, res, next) => {
