@@ -7,16 +7,10 @@ const { v4: uuidv4 } = require('uuid');
 
 require('dotenv').config();
 
-const Brevo = require('@getbrevo/brevo');
+const { TransactionalEmailsApi, SendSmtpEmail } = require('@getbrevo/brevo');
 
-// Instanciar la API de emails transaccionales
-const apiInstance = new Brevo.TransactionalEmailsApi();
-
-// Configurar la API Key
-apiInstance.setApiKey(
-  Brevo.TransactionalEmailsApiApiKeys.apiKey,
-  process.env.BREVO_API_KEY
-);
+const apiInstance = new TransactionalEmailsApi();
+apiInstance.setApiKey(0, process.env.BREVO_API_KEY);
 
 const app = express();
 const pool = require('./db'); // Pool de conexión a Postgres
@@ -441,11 +435,10 @@ async function crearTicketYEnviarMail({ nombre, email, tipoTicket, tanda, cantid
         <p style="font-size: 12px; color: #4b5563; margin-top: 15px; font-family: monospace;">ID único de ticket: ${id}</p>
     `;
 
-    // 3. Enviar el correo usando Resend (vía HTTPS - Puerto 443)
-    // 3. Enviar el correo usando Brevo
+
 let mailEnviado = true;
 try {
-  const sendSmtpEmail = new Brevo.SendSmtpEmail();
+  const sendSmtpEmail = new SendSmtpEmail();
 
   sendSmtpEmail.subject = `¡Tu entrada para el Evento está lista! 🎟️ - ${nombre}`;
   sendSmtpEmail.htmlContent = plantillaEmail(contenidoHtml);
