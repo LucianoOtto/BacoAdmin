@@ -445,25 +445,24 @@ async function crearTicketYEnviarMail({ nombre, email, tipoTicket, tanda, cantid
     // 3. Enviar el correo usando Brevo
 let mailEnviado = true;
 try {
-    const sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail();
+  const sendSmtpEmail = new Brevo.SendSmtpEmail();
 
-    sendSmtpEmail.subject = `¡Tu entrada para el Evento está lista! 🎟️ - ${nombre}`;
-    sendSmtpEmail.htmlContent = plantillaEmail(contenidoHtml);
-    sendSmtpEmail.sender = { name: "Baco Tickets", email: "tu_mail_verificado_en_brevo@gmail.com" };
-    sendSmtpEmail.to = [{ email: email, name: nombre }];
+  sendSmtpEmail.subject = `¡Tu entrada para el Evento está lista! 🎟️ - ${nombre}`;
+  sendSmtpEmail.htmlContent = plantillaEmail(contenidoHtml);
+  sendSmtpEmail.sender = { name: "Baco Tickets", email: "tu_email_verificado@dominio.com" };
+  sendSmtpEmail.to = [{ email: email, name: nombre }];
 
-    // Adjuntar el logo en Base64 para Brevo
-    if (LOGO_BASE64) {
-        sendSmtpEmail.attachment = [{
-            name: "baco-logo.png",
-            content: LOGO_BASE64
-        }];
-    }
+  if (LOGO_BASE64) {
+    sendSmtpEmail.attachment = [{
+      name: "baco-logo.png",
+      content: LOGO_BASE64
+    }];
+  }
 
-    await apiInstance.sendTransacEmail(sendSmtpEmail);
+  await apiInstance.sendTransacEmail(sendSmtpEmail);
 } catch (mailError) {
-    console.error("⚠️ Error en Brevo:", mailError.message || mailError);
-    mailEnviado = false;
+  console.error("⚠️ Error en Brevo:", mailError.message || mailError);
+  mailEnviado = false;
 }
 }
 
