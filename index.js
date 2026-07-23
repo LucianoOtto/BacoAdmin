@@ -436,23 +436,28 @@ async function crearTicketYEnviarMail({ nombre, email, tipoTicket, tanda, cantid
     `;
 
 
-let mailEnviado = true;
+ let mailEnviado = true;
 try {
-  const sendSmtpEmail = new SendSmtpEmail();
+  const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+    method: 'POST',
+    headers: {
+      'accept': 'application/json',
+      'api-key': process.env.BREVO_API_KEY,
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify({
+      sender: { name: "Baco Tickets", email: "tu_email_verificado@dominio.com" },
+      to: [{ email: email, name: nombre }],
+      subject: `¡Tu entrada para el Evento está lista! 🎟️ - ${nombre}`,
+      htmlContent: plantillaEmail(contenidoHtml),
+      attachment: LOGO_BASE64 ? [{ name: "baco-logo.png", content: LOGO_BASE64 }] : []
+    })
+  });
 
-  sendSmtpEmail.subject = `¡Tu entrada para el Evento está lista! 🎟️ - ${nombre}`;
-  sendSmtpEmail.htmlContent = plantillaEmail(contenidoHtml);
-  sendSmtpEmail.sender = { name: "Baco Tickets", email: "tu_email_verificado@dominio.com" };
-  sendSmtpEmail.to = [{ email: email, name: nombre }];
-
-  if (LOGO_BASE64) {
-    sendSmtpEmail.attachment = [{
-      name: "baco-logo.png",
-      content: LOGO_BASE64
-    }];
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(JSON.stringify(errorData));
   }
-
-  await apiInstance.sendTransacEmail(sendSmtpEmail);
 } catch (mailError) {
   console.error("⚠️ Error en Brevo:", mailError.message || mailError);
   mailEnviado = false;
