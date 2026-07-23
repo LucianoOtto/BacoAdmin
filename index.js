@@ -1,9 +1,9 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const fs = require('fs');
 const bcrypt = require('bcrypt');
 const { v4: uuidv4 } = require('uuid');
-//const nodemailer = require('nodemailer');
 
 require('dotenv').config();
 
@@ -48,9 +48,28 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 
-// Almacenamiento temporal en memoria para las sesiones activas
-const sesionesActivas = {};
-const DURACION_SESION_MS = 2 * 60 * 60 * 1000; 
+// ==================== SESIONES (persistentes en Postgres) ====================
+// ANTES: las sesiones vivían en un objeto en memoria (sesionesActivas = {}).
+// Eso hacía que, cada vez que el servidor se reiniciaba (por ejemplo, si el
+// hosting "duerme" el proceso por inactividad y lo levanta de nuevo en el
+// próximo request), TODAS las sesiones activas se perdían. El personal de
+// control quedaba con un token guardado en el navegador que el backend ya
+// no reconocía, entonces cualquier request protegido (como validar el QR)
+// devolvía 401 y el frontend los mandaba al login sin validar nada.
+//
+// Ahora las sesiones se guardan en la tabla `sesiones` de Postgres, así
+// sobreviven a reinicios del servidor. Requiere correr esta migración una
+// sola vez en la base:
+//
+// CREATE TABLE IF NOT EXISTS sesiones (
+//     token TEXT PRIMARY KEY,
+//     usuario_id TEXT NOT NULL,
+//     nombre TEXT NOT NULL,
+//     rol TEXT NOT NULL,
+//     expira TIMESTAMPTZ NOT NULL
+// );
+
+const DURACION_SESION_MS = 2 * 60 * 60 * 1000;
 
 const CATALOGO_BEBIDAS = {
     'Fernet': 10000,
@@ -102,17 +121,35 @@ function calcularConsumoInsumos(venta) {
     }));
 }
 
-
+// ==================== LOGO / PLANTILLA DE MAILS ====================
+// ANTES: adjuntosLogo() devolvía un objeto con la sintaxis de nodemailer
+// ({ filename, path, cid }), pero el envío real se hace con el SDK de
+// Resend, que usa OTRA sintaxis ({ filename, content, content_id }) y
+// además nunca se le pasaba `attachments` a resend.emails.send(...). Por
+// eso el <img src="cid:logoBacoProducciones"> de la plantilla no
+// encontraba ninguna imagen adjunta y no cargaba.
+//
+// Ahora leemos el logo una sola vez al iniciar el server, lo convertimos a
+// base64 y lo mandamos en el formato que espera Resend.
 
 const LOGO_PATH = path.join(__dirname, 'assets', 'BACO-Produ-Blanco.png');
 const LOGO_CID = 'logoBacoProducciones';
 
+let LOGO_BASE64 = null;
+try {
+    LOGO_BASE64 = fs.readFileSync(LOGO_PATH).toString('base64');
+} catch (error) {
+    console.warn(`⚠️ No se pudo leer el logo en ${LOGO_PATH}. Los mails se enviarán sin logo.`, error.message);
+}
+
 function adjuntosLogo() {
+    if (!LOGO_BASE64) return [];
+
     return [
         {
             filename: 'baco-logo.png',
-            path: LOGO_PATH,
-            cid: LOGO_CID
+            content: LOGO_BASE64,
+            content_id: LOGO_CID
         }
     ];
 }
@@ -193,34 +230,46 @@ async function obtenerTandas() {
     return filaATandas(rows[0]);
 }
 
+// ==================== MIDDLEWARE DE SESIÓN (ahora consulta Postgres) ====================
 function verificarSesion(rolesPermitidos = []) {
-    return (req, res, next) => {
-        const token = req.headers['authorization'];
+    return async (req, res, next) => {
+        try {
+            const token = req.headers['authorization'];
 
-        if (!token || !sesionesActivas[token]) {
-            return res.status(401).json({ error: 'Sesión no iniciada o inválida' });
+            if (!token) {
+                return res.status(401).json({ error: 'Sesión no iniciada o inválida' });
+            }
+
+            const { rows } = await pool.query('SELECT * FROM sesiones WHERE token = $1', [token]);
+            const sesion = rows[0];
+
+            if (!sesion) {
+                return res.status(401).json({ error: 'Sesión no iniciada o inválida' });
+            }
+
+            if (new Date() > new Date(sesion.expira)) {
+                await pool.query('DELETE FROM sesiones WHERE token = $1', [token]);
+                return res.status(401).json({ error: 'La sesión ha expirado. Por favor, iniciá sesión nuevamente.' });
+            }
+
+            const nuevaExpira = new Date(Date.now() + DURACION_SESION_MS);
+
+            if (sesion.rol !== 'admin' && rolesPermitidos.length > 0 && !rolesPermitidos.includes(sesion.rol)) {
+                return res.status(403).json({ error: 'No tenés permisos para realizar esta acción' });
+            }
+
+            await pool.query('UPDATE sesiones SET expira = $1 WHERE token = $2', [nuevaExpira, token]);
+
+            req.usuarioSesion = {
+                usuarioId: sesion.usuario_id,
+                nombre: sesion.nombre,
+                rol: sesion.rol
+            };
+
+            next();
+        } catch (error) {
+            next(error);
         }
-
-        const sesion = sesionesActivas[token];
-
-        if (new Date() > sesion.expira) {
-            delete sesionesActivas[token];
-            return res.status(401).json({ error: 'La sesión ha expirado. Por favor, iniciá sesión nuevamente.' });
-        }
-
-        if (sesion.rol === 'admin') {
-            sesion.expira = new Date(Date.now() + DURACION_SESION_MS);
-            req.usuarioSesion = sesion;
-            return next();
-        }
-
-        if (rolesPermitidos.length > 0 && !rolesPermitidos.includes(sesion.rol)) {
-            return res.status(403).json({ error: 'No tenés permisos para realizar esta acción' });
-        }
-
-        sesion.expira = new Date(Date.now() + DURACION_SESION_MS);
-        req.usuarioSesion = sesion; 
-        next();
     };
 }
 
@@ -292,13 +341,13 @@ app.post('/api/auth/login', async (req, res, next) => {
         }
 
         const token = uuidv4();
+        const expira = new Date(Date.now() + DURACION_SESION_MS);
 
-        sesionesActivas[token] = {
-            usuarioId: usuarioEncontrado.id,
-            nombre: usuarioEncontrado.nombre,
-            rol: usuarioEncontrado.rol,
-            expira: new Date(Date.now() + DURACION_SESION_MS)
-        };
+        await pool.query(
+            `INSERT INTO sesiones (token, usuario_id, nombre, rol, expira)
+             VALUES ($1, $2, $3, $4, $5)`,
+            [token, usuarioEncontrado.id, usuarioEncontrado.nombre, usuarioEncontrado.rol, expira]
+        );
 
         res.json({
             mensaje: 'Login exitoso',
@@ -380,8 +429,8 @@ async function crearTicketYEnviarMail({ nombre, email, tipoTicket, tanda, cantid
         return res.status(500).json({ error: 'Error al registrar la entrada en la base de datos.' });
     }
 
-    const FRONTEND_URL = process.env.FRONTEND_URL
-    const urlValidacion = `${FRONTEND_URL}/validar/${id}`
+    const FRONTEND_URL = process.env.FRONTEND_URL;
+    const urlValidacion = `${FRONTEND_URL}/validar/${id}`;
     const qrImagenUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(urlValidacion)}`;
 
     let etiquetaTipo = `Entrada General · Tanda ${tanda}`;
@@ -411,7 +460,8 @@ async function crearTicketYEnviarMail({ nombre, email, tipoTicket, tanda, cantid
             from: 'Baco Tickets <onboarding@resend.dev>', // Dominio de prueba que incluye Resend por defecto
             to: [email],
             subject: `¡Tu entrada para el Evento está lista! 🎟️ - ${nombre}`,
-            html: plantillaEmail(contenidoHtml)
+            html: plantillaEmail(contenidoHtml),
+            attachments: adjuntosLogo() // <-- antes faltaba: sin esto el cid del logo no resolvía nada
         });
     } catch (mailError) {
         console.error("⚠️ Error en Resend:", mailError.message);
@@ -420,7 +470,7 @@ async function crearTicketYEnviarMail({ nombre, email, tipoTicket, tanda, cantid
 
     // 4. Respuesta
     return res.status(201).json({
-        mensaje: mailEnviado 
+        mensaje: mailEnviado
             ? `¡Registro exitoso! La entrada con el QR fue enviada a: ${email}`
             : `¡Registro exitoso! Entrada guardada (⚠️ no se pudo enviar el mail a ${email}).`,
         ticket: { id, nombre, email, tipoTicket, tanda, cantidadPersonas, precio, asistio: false, vendedorId, fechaRegistro }
@@ -576,8 +626,8 @@ app.patch('/api/validar/:id', verificarSesion(['rrpp', 'control']), async (req, 
         }
 
         if (comprador.asistio) {
-            return res.status(200).json({ 
-                estado: 'REPETIDO', 
+            return res.status(200).json({
+                estado: 'REPETIDO',
                 mensaje: `¡ALERTA! Este ticket ya ingresó. Pertenece a ${comprador.nombre}`,
                 cantidadPersonas: comprador.cantidad_personas || 1,
                 tipoTicket: comprador.tipo_ticket || 'general'
@@ -593,8 +643,8 @@ app.patch('/api/validar/:id', verificarSesion(['rrpp', 'control']), async (req, 
             mensajeExtra = ' — 🎉 2x1: ingresan 2 personas con este QR.';
         }
 
-        res.status(200).json({ 
-            estado: 'VALIDO', 
+        res.status(200).json({
+            estado: 'VALIDO',
             mensaje: `¡Acceso concedido! Bienvenido/a, ${comprador.nombre}.${mensajeExtra}`,
             cantidadPersonas: comprador.cantidad_personas || 1,
             tipoTicket: comprador.tipo_ticket || 'general',
@@ -829,7 +879,7 @@ app.patch('/api/admin/stock-insumos/:insumo', verificarSesion(['admin']), async 
 
 app.post('/api/admin/otorgar-vale', verificarSesion(['admin']), async (req, res, next) => {
     try {
-        const { rrppId, tipoPremio, premioDetalle } = req.body; 
+        const { rrppId, tipoPremio, premioDetalle } = req.body;
 
         if (!rrppId || !tipoPremio || !premioDetalle) {
             return res.status(400).json({ error: 'Faltan parámetros: rrppId, tipoPremio o premioDetalle.' });
@@ -847,8 +897,10 @@ app.post('/api/admin/otorgar-vale', verificarSesion(['admin']), async (req, res,
         if (tipoPremio === 'entrada') {
             const ticketId = uuidv4().split('-')[0];
 
-            const FRONTEND_URL = process.env.FRONTEND_URL
-            const urlValidacion = `${FRONTEND_URL}/validar/${id}`
+            const FRONTEND_URL = process.env.FRONTEND_URL;
+            // ANTES: acá se usaba `id`, una variable que no existía en este scope
+            // (el QR terminaba apuntando a "/validar/undefined"). Corregido a ticketId.
+            const urlValidacion = `${FRONTEND_URL}/validar/${ticketId}`;
             const qrImagenUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(urlValidacion)}`;
 
             const contenidoHtml = `
@@ -861,25 +913,27 @@ app.post('/api/admin/otorgar-vale', verificarSesion(['admin']), async (req, res,
                 <p style="font-size: 11px; color: #4b5563; font-family: monospace;">ID de Entrada: ${ticketId}</p>
             `;
 
-            const mailOptions = {
-                from: '"Administración Baco" <baco.producciones26@gmail.com>',
-                to: correoDestinatario,
-                subject: `🎁 ¡Acá tenés tu Entrada de Regalo! - ${rrpp.nombre}`,
-                html: plantillaEmail(contenidoHtml),
-                attachments: adjuntosLogo()
-            };
-
             await pool.query(
                 `INSERT INTO compradores (id, nombre, email, tipo_ticket, tanda, cantidad_personas, precio, asistio, vendedor_id)
                  VALUES ($1, $2, $3, 'regalo', NULL, 1, 0, false, 'ADMIN-PREMIO')`,
                 [ticketId, `${rrpp.nombre} (Premio Staff)`, correoDestinatario]
             );
 
+            // ANTES: se llamaba a transporter.sendMail(...), pero `transporter` nunca
+            // se creó (nodemailer está comentado más arriba) -> ReferenceError silencioso
+            // atrapado por el catch, y el mail nunca salía. Migrado a Resend, igual que
+            // el resto del sistema.
             try {
-                await transporter.sendMail(mailOptions);
+                await resend.emails.send({
+                    from: 'Administración Baco <onboarding@resend.dev>',
+                    to: [correoDestinatario],
+                    subject: `🎁 ¡Acá tenés tu Entrada de Regalo! - ${rrpp.nombre}`,
+                    html: plantillaEmail(contenidoHtml),
+                    attachments: adjuntosLogo()
+                });
                 return res.status(201).json({ mensaje: `¡Premio emitido! Entrada free enviada con éxito a ${correoDestinatario}.` });
             } catch (error) {
-                console.error("⚠️ Error Nodemailer (Entrada):", error.message);
+                console.error("⚠️ Error Resend (Entrada):", error.message);
                 return res.status(201).json({ mensaje: `⚠️ Registrado en base de datos, pero falló el envío del mail. ID del ticket: ${ticketId}` });
             }
 
@@ -899,14 +953,6 @@ app.post('/api/admin/otorgar-vale', verificarSesion(['admin']), async (req, res,
                 <p style="font-size: 13px; color: #64748b;">Mostrá este código único en la Barra. Solo sirve para un (1) uso único.</p>
             `;
 
-            const mailOptions = {
-                from: '"Premios Barra Baco" <baco.producciones26@gmail.com>',
-                to: correoDestinatario,
-                subject: `🎁 ¡Tenés un Vale de Barra Libre! - ${rrpp.nombre}`,
-                html: plantillaEmail(contenidoHtml),
-                attachments: adjuntosLogo()
-            };
-
             await pool.query(
                 `INSERT INTO vales_otorgados (id, codigo, rrpp_id, rrpp_nombre, premio, estado)
                  VALUES ($1, $2, $3, $4, $5, 'PENDIENTE')`,
@@ -914,10 +960,16 @@ app.post('/api/admin/otorgar-vale', verificarSesion(['admin']), async (req, res,
             );
 
             try {
-                await transporter.sendMail(mailOptions);
+                await resend.emails.send({
+                    from: 'Premios Barra Baco <onboarding@resend.dev>',
+                    to: [correoDestinatario],
+                    subject: `🎁 ¡Tenés un Vale de Barra Libre! - ${rrpp.nombre}`,
+                    html: plantillaEmail(contenidoHtml),
+                    attachments: adjuntosLogo()
+                });
                 return res.status(201).json({ mensaje: `¡Premio emitido! Vale [ ${codigoVale} ] enviado a ${correoDestinatario}.` });
             } catch (error) {
-                console.error("⚠️ Error Nodemailer (Bebida):", error.message);
+                console.error("⚠️ Error Resend (Bebida):", error.message);
                 return res.status(201).json({ mensaje: `⚠️ Registrado en sistema (Fallo de Red/Mail). Copiá este código para el RRPP: [ ${codigoVale} ]` });
             }
         } else {
