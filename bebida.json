@@ -1,3 +1,23 @@
 [
-
+  {
+    "id": "93190f94",
+    "producto": "Vodka",
+    "cantidad": 1,
+    "precioUnitario": 8000,
+    "precioTotal": 8000,
+    "conDescuento": false,
+    "encargadoId": "346a1a60",
+    "fechaVenta": "2026-07-23T01:59:48.418Z"
+  },
+  {
+    "id": "f1943a22",
+    "producto": "Jarra Gaseosa",
+    "cantidad": 1,
+    "sabor": "Sprite",
+    "precioUnitario": 4000,
+    "precioTotal": 4000,
+    "conDescuento": false,
+    "encargadoId": "346a1a60",
+    "fechaVenta": "2026-07-23T02:08:57.974Z"
+  }
 ]

@@ -44,12 +44,12 @@ const sesionesActivas = {};
 const DURACION_SESION_MS = 2 * 60 * 60 * 1000; 
 
 const CATALOGO_BEBIDAS = {
-    'Fernet': 3500,          // Jarra de Fernet con Coca-Cola
-    'Cerveza': 2000,
-    'Vodka': 3000,           // Jarra de Vodka con Sprite
-    'Agua': 1000,
-    'Jarra Gaseosa': 1000,   // Jarra de gaseosa sola (Coca-Cola o Sprite, a elección) - AJUSTAR PRECIO SI CORRESPONDE
-    'Lata Energizante': 2500
+    'Fernet': 10000,          // Jarra de Fernet con Coca-Cola
+    'Cerveza': 5000,
+    'Vodka': 8000,           // Jarra de Vodka con Sprite
+    'Agua': 4000,
+    'Jarra Gaseosa': 4000,   // Jarra de gaseosa sola (Coca-Cola o Sprite, a elección) - AJUSTAR PRECIO SI CORRESPONDE
+    'Lata Energizante': 4000
 };
 
 // ==========================================
@@ -133,6 +133,43 @@ const transporter = nodemailer.createTransport({
     pass: process.env.PASSAPI
   }
 });
+
+// ==========================================
+// PLANTILLA DE EMAIL UNIFICADA (fondo negro + logo como header)
+// ==========================================
+// El logo se manda como adjunto embebido (cid), no como URL pública, así
+// funciona siempre sin depender de que el archivo esté hosteado en internet.
+const LOGO_PATH = path.join(__dirname, 'assets', 'BACO-Produ-Blanco.png');
+const LOGO_CID = 'logoBacoProducciones';
+
+// Devuelve el array de "attachments" que hay que sumarle a CUALQUIER mailOptions
+// que use la plantilla, para que el <img src="cid:..."> se resuelva correctamente.
+function adjuntosLogo() {
+    return [
+        {
+            filename: 'baco-logo.png',
+            path: LOGO_PATH,
+            cid: LOGO_CID
+        }
+    ];
+}
+
+// Envuelve cualquier contenido HTML dentro de la estructura común del mail:
+// fondo negro, logo arriba a modo de cabecera, y el contenido particular abajo.
+function plantillaEmail(contenidoHtml) {
+    return `
+    <div style="background-color:#000000; padding:32px 16px; font-family: Arial, sans-serif;">
+        <div style="max-width:500px; margin:0 auto; background-color:#000000; border-radius:12px; border:1px solid #1f2937; overflow:hidden;">
+            <div style="background-color:#000000; padding:24px; text-align:center; border-bottom:1px solid #1f2937;">
+                <img src="cid:${LOGO_CID}" alt="Baco Producciones" style="max-width:170px; width:100%; height:auto; display:inline-block;" />
+            </div>
+            <div style="padding:30px; text-align:center; color:#ffffff;">
+                ${contenidoHtml}
+            </div>
+        </div>
+    </div>
+    `;
+}
 
 // ==========================================
 // FUNCIONES AUXILIARES (FILE SYSTEM)
@@ -341,24 +378,25 @@ async function crearTicketYEnviarMail({ nombre, email, tipoTicket, tanda, cantid
         etiquetaTipo = `🎉 2x1 · Tanda ${tanda} · ingresan 2 personas`;
     }
 
+    const contenidoHtml = `
+        <h2 style="color: #818cf8; font-size: 24px; margin-bottom: 10px;">¡Hola, ${nombre}!</h2>
+        <p style="color: #9ca3af; font-size: 16px;">Tu entrada para el evento se procesó con éxito.</p>
+        <p style="color: #a5b4fc; font-size: 14px; font-weight: bold; margin-bottom: 5px;">${etiquetaTipo}</p>
+        <p style="color: #9ca3af; font-size: 14px; margin-bottom: 25px;">Presentá este código QR en tu celular al ingresar a la puerta.</p>
+
+        <div style="background-color: #ffffff; padding: 15px; display: inline-block; border-radius: 8px; margin-bottom: 25px;">
+            <img src="${qrImagenUrl}" alt="Código QR de Acceso" style="display: block; width: 250px; height: 250px;" />
+        </div>
+
+        <p style="font-size: 12px; color: #4b5563; margin-top: 15px; font-family: monospace;">ID único de ticket: ${nuevoTicket.id}</p>
+    `;
+
     const mailOptions = {
         from: '"Control de Accesos Baco" <baco.producciones26@gmail.com>',
         to: email,
         subject: `¡Tu entrada para el Evento está lista! 🎟️ - ${nombre}`,
-        html: `
-            <div style="font-family: sans-serif; background-color: #111827; color: #ffffff; padding: 30px; text-align: center; max-width: 500px; margin: 0 auto; border-radius: 12px; border: 1px solid #1f2937;">
-                <h2 style="color: #818cf8; font-size: 24px; margin-bottom: 10px;">¡Hola, ${nombre}!</h2>
-                <p style="color: #9ca3af; font-size: 16px;">Tu entrada para el evento se procesó con éxito.</p>
-                <p style="color: #a5b4fc; font-size: 14px; font-weight: bold; margin-bottom: 5px;">${etiquetaTipo}</p>
-                <p style="color: #9ca3af; font-size: 14px; margin-bottom: 25px;">Presentá este código QR en tu celular al ingresar a la puerta.</p>
-                
-                <div style="background-color: #ffffff; padding: 15px; display: inline-block; border-radius: 8px; margin-bottom: 25px;">
-                    <img src="${qrImagenUrl}" alt="Código QR de Acceso" style="display: block; width: 250px; height: 250px;" />
-                </div>
-                
-                <p style="font-size: 12px; color: #4b5563; margin-top: 15px; font-family: monospace;">ID único de ticket: ${nuevoTicket.id}</p>
-            </div>
-        `
+        html: plantillaEmail(contenidoHtml),
+        attachments: adjuntosLogo()
     };
 
     try {
@@ -450,14 +488,14 @@ app.get('/api/bebidas/catalogo', verificarSesion(['barra']), (req, res) => {
 
 // CORREGIDO: ahora acepta "sabor" para la Jarra Gaseosa (Coca-Cola o Sprite)
 app.post('/api/bebidas/anotar', verificarSesion(['barra']), async (req, res) => {
-    const { producto, cantidad, sabor } = req.body;
+    const { producto, cantidad, sabor, conDescuento } = req.body;
 
     if (!producto || !cantidad) {
         return res.status(400).json({ error: 'Faltan datos de la venta' });
     }
 
-    const precioUnitario = CATALOGO_BEBIDAS[producto];
-    if (precioUnitario === undefined) {
+    const precioBase = CATALOGO_BEBIDAS[producto];
+    if (precioBase === undefined) {
         return res.status(400).json({ error: 'Producto no reconocido' });
     }
 
@@ -466,10 +504,15 @@ app.post('/api/bebidas/anotar', verificarSesion(['barra']), async (req, res) => 
         return res.status(400).json({ error: 'Cantidad inválida' });
     }
 
-    // La Jarra Gaseosa requiere indicar el sabor porque de eso depende qué insumo se descuenta
     if (producto === 'Jarra Gaseosa' && sabor !== 'Coca-Cola' && sabor !== 'Sprite') {
         return res.status(400).json({ error: 'Para la Jarra Gaseosa hay que indicar el sabor: "Coca-Cola" o "Sprite".' });
     }
+
+    // NUEVO: si viene el flag, aplicamos 20% de descuento sobre el precio base
+    const descuentoAplicado = conDescuento === true;
+    const precioUnitario = descuentoAplicado
+        ? Math.round(precioBase * 0.8)
+        : precioBase;
 
     const ventasBebidas = await leerArchivo(bebidaPath);
 
@@ -480,7 +523,8 @@ app.post('/api/bebidas/anotar', verificarSesion(['barra']), async (req, res) => 
         ...(producto === 'Jarra Gaseosa' ? { sabor } : {}),
         precioUnitario,
         precioTotal: precioUnitario * cantidadNum,
-        encargadoId: req.usuarioSesion.usuarioId, 
+        conDescuento: descuentoAplicado, // NUEVO: queda registrado en el JSON para poder auditarlo después
+        encargadoId: req.usuarioSesion.usuarioId,
         fechaVenta: new Date().toISOString()
     };
 
@@ -774,21 +818,22 @@ app.post('/api/admin/otorgar-vale', verificarSesion(['admin']), async (req, res)
         const urlValidacion = `http://localhost:5173/validar/${ticketId}`;
         const qrImagenUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(urlValidacion)}`;
 
+        const contenidoHtml = `
+            <h2 style="color: #a855f7; font-size: 24px; margin-bottom: 10px;">¡Premio para ${rrpp.nombre}! 🎟️</h2>
+            <p style="color: #9ca3af; font-size: 15px;">Te otorgamos una entrada free en reconocimiento por tu laburo: <strong>${premioDetalle}</strong></p>
+            <p style="color: #9ca3af; font-size: 13px; margin-bottom: 25px;">Presentá este código QR directamente al personal de Control en la puerta.</p>
+            <div style="background-color: #ffffff; padding: 15px; display: inline-block; border-radius: 8px; margin-bottom: 25px;">
+                <img src="${qrImagenUrl}" alt="QR Entrada Regalada" style="display: block; width: 250px; height: 250px;" />
+            </div>
+            <p style="font-size: 11px; color: #4b5563; font-family: monospace;">ID de Entrada: ${ticketId}</p>
+        `;
+
         const mailOptions = {
             from: '"Administración Baco" <baco.producciones26@gmail.com>',
             to: correoDestinatario,
             subject: `🎁 ¡Acá tenés tu Entrada de Regalo! - ${rrpp.nombre}`,
-            html: `
-                <div style="font-family: sans-serif; background-color: #111827; color: #ffffff; padding: 30px; text-align: center; max-width: 500px; margin: 0 auto; border-radius: 12px; border: 1px solid #1f2937;">
-                    <h2 style="color: #a855f7; font-size: 24px; margin-bottom: 10px;">¡Premio para ${rrpp.nombre}! 🎟️</h2>
-                    <p style="color: #9ca3af; font-size: 15px;">Te otorgamos una entrada free en reconocimiento por tu laburo: <strong>${premioDetalle}</strong></p>
-                    <p style="color: #9ca3af; font-size: 13px; margin-bottom: 25px;">Presentá este código QR directamente al personal de Control en la puerta.</p>
-                    <div style="background-color: #ffffff; padding: 15px; display: inline-block; border-radius: 8px; margin-bottom: 25px;">
-                        <img src="${qrImagenUrl}" alt="QR Entrada Regalada" style="display: block; width: 250px; height: 250px;" />
-                    </div>
-                    <p style="font-size: 11px; color: #4b5563; font-family: monospace;">ID de Entrada: ${ticketId}</p>
-                </div>
-            `
+            html: plantillaEmail(contenidoHtml),
+            attachments: adjuntosLogo()
         };
 
         // Contingencia: Intentamos mandar, si falla guardamos igual en archivo
@@ -817,23 +862,24 @@ app.post('/api/admin/otorgar-vale', verificarSesion(['admin']), async (req, res)
             estado: 'PENDIENTE'
         };
 
+        const contenidoHtml = `
+            <h2 style="color: #38bdf8; font-size: 24px; margin-bottom: 5px;">¡Vale de Consumición! 🎉</h2>
+            <p style="color: #94a3b8; font-size: 15px; margin-bottom: 20px;">Ganaste un beneficio para retirar en barra: </p>
+            <div style="background-color: #1e293b; padding: 20px; border-radius: 8px; border: 1px dashed #38bdf8; margin-bottom: 20px;">
+                <strong style="font-size: 20px; color: #f43f5e; display: block; margin-bottom: 15px;">${premioDetalle}</strong>
+                <span style="font-family: monospace; font-size: 22px; font-weight: bold; color: #38bdf8; background-color: #0f172a; padding: 6px 15px; border-radius: 4px; display: inline-block; letter-spacing: 2px;">
+                    ${codigoVale}
+                </span>
+            </div>
+            <p style="font-size: 13px; color: #64748b;">Mostrá este código único en la Barra. Solo sirve para un (1) uso único.</p>
+        `;
+
         const mailOptions = {
             from: '"Premios Barra Baco" <baco.producciones26@gmail.com>',
             to: correoDestinatario,
             subject: `🎁 ¡Tenés un Vale de Barra Libre! - ${rrpp.nombre}`,
-            html: `
-                <div style="font-family: sans-serif; background-color: #0f172a; color: #ffffff; padding: 30px; text-align: center; max-width: 500px; margin: 0 auto; border-radius: 12px; border: 1px solid #334155;">
-                    <h2 style="color: #38bdf8; font-size: 24px; margin-bottom: 5px;">¡Vale de Consumición! 🎉</h2>
-                    <p style="color: #94a3b8; font-size: 15px; margin-bottom: 20px;">Ganaste un beneficio para retirar en barra: </p>
-                    <div style="background-color: #1e293b; padding: 20px; border-radius: 8px; border: 1px dashed #38bdf8; margin-bottom: 20px;">
-                        <strong style="font-size: 20px; color: #f43f5e; display: block; margin-bottom: 15px;">${premioDetalle}</strong>
-                        <span style="font-family: monospace; font-size: 22px; font-weight: bold; color: #38bdf8; background-color: #0f172a; padding: 6px 15px; border-radius: 4px; display: inline-block; letter-spacing: 2px;">
-                            ${codigoVale}
-                        </span>
-                    </div>
-                    <p style="font-size: 13px; color: #64748b;">Mostrá este código único en la Barra. Solo sirve para un (1) uso único.</p>
-                </div>
-            `
+            html: plantillaEmail(contenidoHtml),
+            attachments: adjuntosLogo()
         };
 
         valesEmitidos.push(nuevoVale);

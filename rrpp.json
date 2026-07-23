@@ -6,6 +6,23 @@
     "password": "$2b$10$LdRyA8IshM2p3R3I2o6fjO.itPun727eSHsX4cDcT.vULAsSDOFDu",
     "rol": "admin",
     "historias": 0
+  },
+  {
+    "id": "346a1a60",
+    "nombre": "jaro9",
+    "usuario": "jaro",
+    "password": "$2b$10$PsP0Fu7nPkraCi.vDH.RrebZ1GbNiYsyTKGMeRWp.3JWWhkcuFcUy",
+    "rol": "barra",
+    "email": "jaro@jaro",
+    "historias": 0
+  },
+  {
+    "id": "f752dd51",
+    "nombre": "luciano",
+    "usuario": "toto",
+    "password": "$2b$10$SlXwnBSy8TpaJGiW9KAnuekRMBloOa7jD0McBIchL7bRuLS.Utv3C",
+    "rol": "rrpp",
+    "email": "toto@toto",
+    "historias": 0
   }
-
 ]
