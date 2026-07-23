@@ -7,10 +7,10 @@ const { v4: uuidv4 } = require('uuid');
 
 require('dotenv').config();
 
-const { TransactionalEmailsApi, SendSmtpEmail } = require('@getbrevo/brevo');
+const Brevo = require('@getbrevo/brevo');
 
-const apiInstance = new TransactionalEmailsApi();
-apiInstance.setApiKey(0, process.env.BREVO_API_KEY);
+const apiInstance = new Brevo.TransactionalEmailsApi();
+apiInstance.setApiKey(Brevo.TransactionalEmailsApiApiKeys.apiKey, process.env.BREVO_API_KEY);
 
 const app = express();
 const pool = require('./db'); // Pool de conexión a Postgres
@@ -104,15 +104,6 @@ function calcularConsumoInsumos(venta) {
 }
 
 // ==================== LOGO / PLANTILLA DE MAILS ====================
-// ANTES: adjuntosLogo() devolvía un objeto con la sintaxis de nodemailer
-// ({ filename, path, cid }), pero el envío real se hace con el SDK de
-// Resend, que usa OTRA sintaxis ({ filename, content, content_id }) y
-// además nunca se le pasaba `attachments` a resend.emails.send(...). Por
-// eso el <img src="cid:logoBacoProducciones"> de la plantilla no
-// encontraba ninguna imagen adjunta y no cargaba.
-//
-// Ahora leemos el logo una sola vez al iniciar el server, lo convertimos a
-// base64 y lo mandamos en el formato que espera Resend.
 
 const LOGO_PATH = path.join(__dirname, 'assets', 'BACO-Produ-Blanco.png');
 const LOGO_CID = 'logoBacoProducciones';
@@ -122,18 +113,6 @@ try {
     LOGO_BASE64 = fs.readFileSync(LOGO_PATH).toString('base64');
 } catch (error) {
     console.warn(`⚠️ No se pudo leer el logo en ${LOGO_PATH}. Los mails se enviarán sin logo.`, error.message);
-}
-
-function adjuntosLogo() {
-    if (!LOGO_BASE64) return [];
-
-    return [
-        {
-            filename: 'baco-logo.png',
-            content: LOGO_BASE64,
-            content_id: LOGO_CID
-        }
-    ];
 }
 
 function plantillaEmail(contenidoHtml) {
@@ -212,7 +191,7 @@ async function obtenerTandas() {
     return filaATandas(rows[0]);
 }
 
-// ==================== MIDDLEWARE DE SESIÓN (ahora consulta Postgres) ====================
+// ==================== MIDDLEWARE DE SESIÓN ====================
 function verificarSesion(rolesPermitidos = []) {
     return async (req, res, next) => {
         try {
@@ -435,33 +414,38 @@ async function crearTicketYEnviarMail({ nombre, email, tipoTicket, tanda, cantid
         <p style="font-size: 12px; color: #4b5563; margin-top: 15px; font-family: monospace;">ID único de ticket: ${id}</p>
     `;
 
+    let mailEnviado = true;
+    try {
+        const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+            method: 'POST',
+            headers: {
+                'accept': 'application/json',
+                'api-key': process.env.BREVO_API_KEY,
+                'content-type': 'application/json'
+            },
+            body: JSON.stringify({
+                sender: { name: "Baco Tickets", email: "lucianootto11@gmail.com" },
+                to: [{ email: email, name: nombre }],
+                subject: `¡Tu entrada para el Evento está lista! 🎟️ - ${nombre}`,
+                htmlContent: plantillaEmail(contenidoHtml),
+                attachment: LOGO_BASE64 ? [{ name: "baco-logo.png", content: LOGO_BASE64 }] : []
+            })
+        });
 
- let mailEnviado = true;
-try {
-  const response = await fetch('https://api.brevo.com/v3/smtp/email', {
-    method: 'POST',
-    headers: {
-      'accept': 'application/json',
-      'api-key': process.env.BREVO_API_KEY,
-      'content-type': 'application/json'
-    },
-    body: JSON.stringify({
-      sender: { name: "Baco Tickets", email: "tu_email_verificado@dominio.com" },
-      to: [{ email: email, name: nombre }],
-      subject: `¡Tu entrada para el Evento está lista! 🎟️ - ${nombre}`,
-      htmlContent: plantillaEmail(contenidoHtml),
-      attachment: LOGO_BASE64 ? [{ name: "baco-logo.png", content: LOGO_BASE64 }] : []
-    })
-  });
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(JSON.stringify(errorData));
+        }
+    } catch (mailError) {
+        console.error("⚠️ Error en Brevo:", mailError.message || mailError);
+        mailEnviado = false;
+    }
 
-  if (!response.ok) {
-    const errorData = await response.json();
-    throw new Error(JSON.stringify(errorData));
-  }
-} catch (mailError) {
-  console.error("⚠️ Error en Brevo:", mailError.message || mailError);
-  mailEnviado = false;
-}
+    res.status(201).json({
+        mensaje: mailEnviado ? 'Ticket registrado y mail enviado con éxito' : 'Ticket registrado pero falló el envío del mail',
+        mailEnviado,
+        ticket: { id, nombre, email, tipoTicket, tanda, cantidadPersonas, precio }
+    });
 }
 
 app.post('/api/registrar', verificarSesion(['rrpp']), async (req, res, next) => {
@@ -885,8 +869,6 @@ app.post('/api/admin/otorgar-vale', verificarSesion(['admin']), async (req, res,
             const ticketId = uuidv4().split('-')[0];
 
             const FRONTEND_URL = process.env.FRONTEND_URL;
-            // ANTES: acá se usaba `id`, una variable que no existía en este scope
-            // (el QR terminaba apuntando a "/validar/undefined"). Corregido a ticketId.
             const urlValidacion = `${FRONTEND_URL}/validar/${ticketId}`;
             const qrImagenUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(urlValidacion)}`;
 
@@ -906,21 +888,30 @@ app.post('/api/admin/otorgar-vale', verificarSesion(['admin']), async (req, res,
                 [ticketId, `${rrpp.nombre} (Premio Staff)`, correoDestinatario]
             );
 
-            // ANTES: se llamaba a transporter.sendMail(...), pero `transporter` nunca
-            // se creó (nodemailer está comentado más arriba) -> ReferenceError silencioso
-            // atrapado por el catch, y el mail nunca salía. Migrado a Resend, igual que
-            // el resto del sistema.
             try {
-                await resend.emails.send({
-                    from: 'Administración Baco <onboarding@resend.dev>',
-                    to: [correoDestinatario],
-                    subject: `🎁 ¡Acá tenés tu Entrada de Regalo! - ${rrpp.nombre}`,
-                    html: plantillaEmail(contenidoHtml),
-                    attachments: adjuntosLogo()
+                const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+                    method: 'POST',
+                    headers: {
+                        'accept': 'application/json',
+                        'api-key': process.env.BREVO_API_KEY,
+                        'content-type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        sender: { name: "Administración Baco", email: "lucianootto11@gmail.com" },
+                        to: [{ email: correoDestinatario, name: rrpp.nombre }],
+                        subject: `🎁 ¡Acá tenés tu Entrada de Regalo! - ${rrpp.nombre}`,
+                        htmlContent: plantillaEmail(contenidoHtml),
+                        attachment: LOGO_BASE64 ? [{ name: "baco-logo.png", content: LOGO_BASE64 }] : []
+                    })
                 });
+
+                if (!response.ok) {
+                    throw new Error(await response.text());
+                }
+
                 return res.status(201).json({ mensaje: `¡Premio emitido! Entrada free enviada con éxito a ${correoDestinatario}.` });
             } catch (error) {
-                console.error("⚠️ Error Resend (Entrada):", error.message);
+                console.error("⚠️ Error Brevo (Entrada):", error.message);
                 return res.status(201).json({ mensaje: `⚠️ Registrado en base de datos, pero falló el envío del mail. ID del ticket: ${ticketId}` });
             }
 
@@ -947,16 +938,29 @@ app.post('/api/admin/otorgar-vale', verificarSesion(['admin']), async (req, res,
             );
 
             try {
-                await resend.emails.send({
-                    from: 'Premios Barra Baco <onboarding@resend.dev>',
-                    to: [correoDestinatario],
-                    subject: `🎁 ¡Tenés un Vale de Barra Libre! - ${rrpp.nombre}`,
-                    html: plantillaEmail(contenidoHtml),
-                    attachments: adjuntosLogo()
+                const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+                    method: 'POST',
+                    headers: {
+                        'accept': 'application/json',
+                        'api-key': process.env.BREVO_API_KEY,
+                        'content-type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        sender: { name: "Premios Barra Baco", email: "lucianootto11@gmail.com" },
+                        to: [{ email: correoDestinatario, name: rrpp.nombre }],
+                        subject: `🎁 ¡Tenés un Vale de Barra Libre! - ${rrpp.nombre}`,
+                        htmlContent: plantillaEmail(contenidoHtml),
+                        attachment: LOGO_BASE64 ? [{ name: "baco-logo.png", content: LOGO_BASE64 }] : []
+                    })
                 });
+
+                if (!response.ok) {
+                    throw new Error(await response.text());
+                }
+
                 return res.status(201).json({ mensaje: `¡Premio emitido! Vale [ ${codigoVale} ] enviado a ${correoDestinatario}.` });
             } catch (error) {
-                console.error("⚠️ Error Resend (Bebida):", error.message);
+                console.error("⚠️ Error Brevo (Bebida):", error.message);
                 return res.status(201).json({ mensaje: `⚠️ Registrado en sistema (Fallo de Red/Mail). Copiá este código para el RRPP: [ ${codigoVale} ]` });
             }
         } else {
