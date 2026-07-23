@@ -15,21 +15,32 @@ app.use(express.json());
 const origenesPermitidos = [
   'http://localhost:5173',
   'https://animated-platypus-df4a3d.netlify.app',
-  'https://delightful-rugelach-42e0e1.netlify.app/' // Si cambia en el futuro
+  'https://delightful-rugelach-42e0e1.netlify.app'
 ];
 
 const corsOptions = {
   origin(origin, callback) {
-    // Permite peticiones sin origin (Postman, mobile) o los orígenes explícitos
-    if (!origin || origenesPermitidos.includes(origin) || origin.endsWith('.netlify.app')) {
+    // Si no hay origin (p. ej. herramientas o Server-to-Server)
+    if (!origin) {
+      return callback(null, true);
+    }
+
+    // Limpiamos barras al final si las hubiera
+    const originLimpio = origin.replace(/\/$/, "");
+
+    // Verificamos si está en la lista permitida o si pertenece a netlify.app
+    const esPermitido = origenesPermitidos.includes(originLimpio) || originLimpio.endsWith('.netlify.app');
+
+    if (esPermitido) {
       callback(null, true);
     } else {
-      callback(new Error('No permitido por CORS'));
+      console.warn(`⚠️ Intento de acceso bloqueado por CORS desde el origen: ${origin}`);
+      callback(new Error(`No permitido por CORS (Origen: ${origin})`));
     }
   },
   credentials: true,
-  methods: ['GET','POST','PUT','PATCH','DELETE','OPTIONS'],
-  allowedHeaders: ['Content-Type','Authorization']
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 };
 
 app.use(cors(corsOptions));
