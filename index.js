@@ -100,7 +100,8 @@ function calcularConsumoInsumos(venta) {
 // ==================== LOGO / PLANTILLA DE MAILS ====================
 
 const LOGO_PATH = path.join(__dirname, 'assets', 'BACO-Produ-Blanco.png');
-const LOGO_CID = 'logoBacoProducciones';
+
+const LOGO_CID = 'baco-logo.png';
 
 let LOGO_BASE64 = null;
 try {
@@ -422,7 +423,7 @@ async function crearTicketYEnviarMail({ nombre, email, tipoTicket, tanda, cantid
                 to: [{ email: email, name: nombre }],
                 subject: `¡Tu entrada para el Evento está lista! 🎟️ - ${nombre}`,
                 htmlContent: plantillaEmail(contenidoHtml),
-                attachment: LOGO_BASE64 ? [{ name: "baco-logo.png", content: LOGO_BASE64 }] : []
+                attachment: LOGO_BASE64 ? [{ name: LOGO_CID, content: LOGO_BASE64 }] : []
             })
         });
 
@@ -895,7 +896,7 @@ app.post('/api/admin/otorgar-vale', verificarSesion(['admin']), async (req, res,
                         to: [{ email: correoDestinatario, name: rrpp.nombre }],
                         subject: `🎁 ¡Acá tenés tu Entrada de Regalo! - ${rrpp.nombre}`,
                         htmlContent: plantillaEmail(contenidoHtml),
-                        attachment: LOGO_BASE64 ? [{ name: "baco-logo.png", content: LOGO_BASE64 }] : []
+                        attachment: LOGO_BASE64 ? [{ name: LOGO_CID, content: LOGO_BASE64 }] : []
                     })
                 });
 
@@ -944,7 +945,7 @@ app.post('/api/admin/otorgar-vale', verificarSesion(['admin']), async (req, res,
                         to: [{ email: correoDestinatario, name: rrpp.nombre }],
                         subject: `🎁 ¡Tenés un Vale de Barra Libre! - ${rrpp.nombre}`,
                         htmlContent: plantillaEmail(contenidoHtml),
-                        attachment: LOGO_BASE64 ? [{ name: "baco-logo.png", content: LOGO_BASE64 }] : []
+                        attachment: LOGO_BASE64 ? [{ name: LOGO_CID, content: LOGO_BASE64 }] : []
                     })
                 });
 
